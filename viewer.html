@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Document Viewer</title>
+    <script src="jszip.min.js"></script>
+    <script src="docx-preview.min.js"></script>
+<style>
+        /* --- Layout & Reset --- */
+        body { margin: 0; padding: 0; background: #f8f9fa; height: 100vh; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+        
+        /* --- Header (Fixed Top) --- */
+        .viewer-header { 
+            position: fixed; top: 0; left: 0; right: 0; height: 50px;
+            background: white; border-bottom: 1px solid #dadce0; 
+            display: flex; justify-content: space-between; align-items: center; 
+            padding: 0 20px; box-sizing: border-box; z-index: 20; 
+        }
+        
+        h1 { margin: 0; font-size: 18px; color: #202124; font-weight: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70%; }
+        
+        .actions button { cursor: pointer; background: #1a73e8; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-size: 14px; transition: background 0.2s; }
+        .actions button:hover { background: #1557b0; }
+
+        /* --- Main Content Wrapper (Occupies rest of screen) --- */
+        .main-wrapper { 
+            position: absolute; top: 50px; bottom: 0; left: 0; right: 0; 
+            display: flex; overflow: hidden; 
+        }
+
+        /* --- Sidebar --- */
+        #outline-sidebar {
+            width: 250px; 
+            min-width: 150px;
+            max-width: 50%;
+            background: #fff;
+            border-right: 1px solid #dadce0;
+            overflow-y: auto; /* Scroll sidebar independently */
+            padding: 15px 0;
+            flex-shrink: 0;
+            display: none; /* Hidden by default */
+            z-index: 10;
+        }
+
+        /* --- Resizer Handle --- */
+        #resizer {
+            width: 8px;
+            margin-left: -4px;
+            background: transparent;
+            cursor: col-resize;
+            z-index: 15;
+            flex-shrink: 0;
+            position: relative;
+        }
+        #resizer:hover { background: rgba(0,0,0,0.1); }
+
+        /* --- Document Area --- */
+        #doc-container { 
+            flex: 1; /* Takes remaining width */
+            overflow-y: scroll; /* ALWAYS allow scroll */
+            padding: 40px; 
+            background: #e8eaed;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        /* Renderer Overrides */
+        .docx-wrapper { background: transparent !important; padding: 0 !important; }
+        section.docx { 
+            background: white !important; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12) !important; 
+            margin-bottom: 20px !important; 
+            flex-shrink: 0; 
+        }
+        
+        /* Sidebar Items */
+        .outline-item { display: flex; align-items: center; padding: 6px 10px 6px 0; cursor: pointer; font-size: 13px; color: #5f6368; border-left: 3px solid transparent; }
+        .outline-item:hover { background-color: #f1f3f4; color: #202124; }
+        .outline-item.active { color: #1a73e8; background-color: #e8f0fe; font-weight: 600; border-left: 3px solid #1a73e8; }
+        .outline-item.hidden-node { display: none; }
+
+        .toggle-btn { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; color: #999; font-size: 10px; cursor: pointer; transition: transform 0.2s; }
+        .toggle-btn:hover { background: #eee; border-radius: 3px; }
+        .toggle-btn.collapsed { transform: rotate(-90deg); }
+        .toggle-btn.invisible { visibility: hidden; }
+
+        /* Search Highlight */
+        .scrolled-highlight { background-color: #ffff00; outline: 3px solid #ffff00; }
+
+        /* --- PRINT STYLES --- */
+        @media print {
+            .viewer-header, #outline-sidebar, #resizer { display: none !important; }
+            body, .main-wrapper, #doc-container { position: relative; top: 0; height: auto !important; overflow: visible !important; display: block !important; background: white !important; }
+            #doc-container { padding: 0 !important; margin: 0 !important; }
+            section.docx { box-shadow: none !important; margin: 0 !important; page-break-after: always; width: 100% !important; }
+            .scrolled-highlight { background-color: transparent !important; outline: none !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="viewer-header">
+        <h1 id="doc-title">Loading...</h1>
+        <div class="actions">
+            <button id="print-btn">Print / Save PDF</button>
+        </div>
+    </div>
+
+    <div class="main-wrapper">
+        <div id="outline-sidebar">
+            <div style="padding: 0 15px 10px; font-weight:bold; color:#202124; font-size:12px; text-transform:uppercase;">Document Outline</div>
+            <div id="outline-content"></div>
+        </div>
+        
+        <div id="resizer"></div>
+
+        <div id="doc-container">
+            <div id="status" style="margin-top:50px; color:#555;">Fetching document...</div>
+        </div>
+    </div>
+
+    <script src="viewer.js"></script>
+</body>
+</html>

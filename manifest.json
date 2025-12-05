@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Docx Local Search Engine",
+  "version": "1.0",
+  "description": "Bulk upload docx files, store them locally, and search with formatting.",
+  "permissions": ["storage", "unlimitedStorage"],
+  "icons": {
+    "128": "icon.png"
+  },
+  "action": {
+    "default_title": "Open Search Engine",
+    "default_icon": "icon.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
