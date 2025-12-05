@@ -1,71 +1,67 @@
-# DocBase - Local Docx Search Engine
+# DocBase - Offline Search Engine for Debate Evidence
 
-**DocBase** is a browser extension that creates a private, local search engine for your `.docx` files. It allows you to bulk upload Word documents into your browser's local storage, index their content, and perform instant full-text searches with weighted relevancy—all without a single byte of data leaving your machine.
+**DocBase** is a browser extension designed for Policy, LD, and PF debaters. It creates a private, offline search engine for your local `.docx` backfiles. 
 
+Stop relying on slow Drive searches or spotty tournament Wi-Fi. Download entire camp files from [Open Evidence](https://opencaselist.com/openev), index them in your browser, and find the perfect card in milliseconds.
 
-## 🚀 Key Features
+![Extension Screenshot Placeholder](https://raw.githubusercontent.com/naiythen/DocBase/refs/heads/main/Screenshot%202025-12-05%20173557.png)
 
-* **🔒 100% Private & Offline**: Files are stored locally in your browser's `IndexedDB` via the `unlimitedStorage` permission. No cloud uploads, no tracking, and no external servers.
-* **⚡ Smart Full-Text Search**:
-    * **Weighted Ranking**: Prioritizes matches in Titles (Score: 100), Headers (Score: 50), and Body text (Score: 10).
-    * **Context Snippets**: Search results display snippets of text surrounding your keywords with highlights.
-    * **Keyword Highlighting**: Matches are highlighted in yellow within the document viewer.
-* **📄 High-Fidelity Viewer**: Renders `.docx` files natively in the browser using `docx-preview`, preserving formatting and layout.
-* **📑 Auto-Generated Outlines**: The viewer automatically generates a navigable Table of Contents sidebar based on document headers (H1-H6).
-* **🖨️ Print & PDF**: Includes a built-in print function to save rendered documents as PDFs.
-* **📂 File Management**: Rename or delete files directly from the database manager.
+## 🏆 Tournament Ready Features
 
-## 🛠️ Tech Stack
+* **🚫 100% Offline & Private**: Works entirely without internet. Your prep stays on your machine in the browser's `IndexedDB`. No cloud uploads.
+* **⚡ Instant Card Search**:
+    * **Smart Ranking**: Prioritizes **File Names** and **Taglines/Cites** (Headers) over card text.
+    * **Snippet Preview**: See the context around the match before opening the file.
+* **📑 Native Docx Viewer**: View files with full formatting (highlighting, underlining, bolding) preserved.
+* **navigable Outline**: The viewer automatically generates a sidebar based on Headers (Taglines), allowing you to jump between blocks instantly.
+* **📂 Bulk Management**: Drag and drop 50+ Open Ev files at once. Manage your database easily.
 
-* **Platform**: Chrome Extension (Manifest V3)
-* **Storage**: IndexedDB (Native Browser Database)
-* **Core Libraries**:
-    * **Mammoth.js**: Used for extracting raw text and structure for indexing.
-    * **docx-preview**: Used for rendering the visual document in the viewer.
-    * **JSZip**: Required dependency for unzipping `.docx` packages.
+## 📖 How to Use for Debate
+
+### 1. Download Backfiles
+Go to [Open Evidence](https://opencaselist.com/openev) and download the `.docx` files you need (e.g., "K Affs", "Politics DA", "T - Substantial").
+
+### 2. Index Your Prep
+1.  Click the **DocBase** extension icon.
+2.  Click **Manage Database**.
+3.  Drag and drop your downloaded files into the upload zone. The extension will parse the taglines and text instantly.
+
+### 3. Search During Rounds
+1.  Type a query (e.g., *"hegemony collapse war"* or *"cap k link"*).
+2.  **Inline Preview**: Click a title to verify it's the right file.
+3.  **Popout View**: Click the **Popout Icon** (↗) to open the file in a new tab for reading speeches.
+4.  **Scroll Spy**: Use the left sidebar to jump specifically to the 1NC Shell or 2AC blocks.
+
+## ⚙️ Search Logic (The "Card" Algorithm)
+
+The search engine is optimized for how debate evidence is formatted. It ranks results based on where the keyword appears:
+
+| Match Location | Debate Equivalent | Priority Score |
+| :--- | :--- | :--- |
+| **Document Title** | File Name (e.g., "Camp_Politics_DA.docx") | **100 (Highest)** |
+| **HTML Headers (H1-H6)** | **Taglines & Cites** | **50 (High)** |
+| **Body Text** | Card Text / Warrants | **10 (Standard)** |
 
 ## 📦 Installation
 
-Since this runs locally, you must install it in Developer Mode:
+Since this is a specialized local tool, install it via Developer Mode:
 
-1.  **Clone** this repository to your local machine.
-2.  Open your browser (Chrome, Edge, Brave, etc.) and navigate to `chrome://extensions`.
-3.  Enable **Developer mode** in the top right corner.
+1.  **Clone/Download** this repository.
+2.  Open **Chrome/Edge** and go to `chrome://extensions`.
+3.  Toggle **Developer mode** (top right).
 4.  Click **Load unpacked**.
-5.  Select the folder containing the `manifest.json` file.
+5.  Select the folder containing `manifest.json`.
 
-## 📖 How to Use
+## 🛠️ Tech Stack
 
-### 1. Uploading Files
-1.  Click the extension icon to open the **Manager** (or the search interface).
-2.  Click **Manage Database**.
-3.  Drag and drop (or select) `.docx` files into the upload area. The status text will update as files are processed and indexed.
+* **Mammoth.js**: Extracts raw text for the search index.
+* **docx-preview**: Renders the evidence with full formatting (crucial for reading cards).
+* **IndexedDB**: Stores your backfiles locally in the browser (via `unlimitedStorage`).
 
-### 2. Searching
-1.  Type a query into the main search box.
-2.  Results appear instantly. Matches found in headers or titles are ranked higher than body text.
-3.  **Inline Preview**: Click a result title to expand the document directly in the list.
-4.  **Full View**: Click the **Popout Icon** (↗) to open the document in a dedicated tab.
+## ⚠️ Important Note on Data
 
-### 3. Viewing
-1.  In the full viewer, use the **Sidebar** to jump between sections.
-2.  The sidebar can be resized by dragging the handle.
-3.  Use `Ctrl+P` or the **Print** button to save the view as a PDF.
-
-## ⚙️ Search Logic
-
-The search engine (`logic.js`) parses files upon upload using `Mammoth.js` to extract raw text and HTML headers. It assigns scores to matches as follows:
-
-| Match Location | Priority Score |
-| :--- | :--- |
-| **Title** | 100 |
-| **Header (H1-H6)** | 50 |
-| **Body Text** | 10 |
-
-## ⚠️ Data Persistence
-
-Please note: Because this extension uses `IndexedDB` inside your browser, **clearing your browser's "Site Data" or "Cookies" may wipe your document database**. Always keep backups of your original `.docx` files.
+Your files are stored in your browser's local storage. **If you clear your "Cookies and Site Data" or "Hosted App Data," your database will be wiped.** Always keep your original `.docx` files on your hard drive as a backup.
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+MIT License. Free for the debate community to use and modify.
