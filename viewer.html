@@ -89,21 +89,13 @@
         /* Search Highlight */
         .scrolled-highlight { background-color: #ffff00; outline: 3px solid #ffff00; }
 
-        /* --- PRINT STYLES --- */
-        @media print {
-            .viewer-header, #outline-sidebar, #resizer { display: none !important; }
-            body, .main-wrapper, #doc-container { position: relative; top: 0; height: auto !important; overflow: visible !important; display: block !important; background: white !important; }
-            #doc-container { padding: 0 !important; margin: 0 !important; }
-            section.docx { box-shadow: none !important; margin: 0 !important; page-break-after: always; width: 100% !important; }
-            .scrolled-highlight { background-color: transparent !important; outline: none !important; }
-        }
     </style>
 </head>
 <body>
     <div class="viewer-header">
         <h1 id="doc-title">Loading...</h1>
         <div class="actions">
-            <button id="print-btn">Print / Save PDF</button>
+            <button id="download-btn">Download Original</button>
         </div>
     </div>
 

@@ -1,6 +1,6 @@
 const DB_NAME = "DocxSearchDB";
 const STORE_NAME = "documents";
-const DB_VERSION = 6; 
+const DB_VERSION = 7; 
 
 const params = new URLSearchParams(window.location.search);
 const docId = parseInt(params.get('id'));
@@ -11,14 +11,12 @@ const matchIndex = params.has('idx') ? parseInt(params.get('idx')) : -1;
 const titleEl = document.getElementById('doc-title');
 const container = document.getElementById('doc-container');
 const statusEl = document.getElementById('status');
-const printBtn = document.getElementById('print-btn');
+const downloadBtn = document.getElementById('download-btn'); // Updated selector
 const sidebar = document.getElementById('outline-sidebar');
 const sidebarContent = document.getElementById('outline-content');
 const resizer = document.getElementById('resizer');
 
 initResizer();
-
-if (printBtn) printBtn.addEventListener('click', () => window.print());
 
 if (!docId) {
     statusEl.textContent = "Error: No document ID provided.";
@@ -40,13 +38,32 @@ function initDBAndRender() {
 
             getRequest.onsuccess = () => {
                 const doc = getRequest.result;
-                if (doc) renderDoc(doc);
-                else statusEl.textContent = "Error: Document not found.";
+                if (doc) {
+                    renderDoc(doc);
+                    setupDownload(doc); // Setup the download button
+                } else {
+                    statusEl.textContent = "Error: Document not found.";
+                }
             };
         } catch(e) {
             statusEl.textContent = "Error: DB Version Mismatch.";
         }
     };
+}
+
+function setupDownload(doc) {
+    if (downloadBtn) {
+        downloadBtn.addEventListener('click', () => {
+            const url = URL.createObjectURL(doc.blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = doc.title; // Uses original filename
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+    }
 }
 
 async function renderDoc(doc) {
@@ -72,7 +89,7 @@ async function renderDoc(doc) {
     }
 }
 
-// --- HELPER: SMART REGEX GENERATOR (Fixed with Capturing Groups) ---
+// --- HELPER: SMART REGEX GENERATOR ---
 function getSmartRegex(query, flags = 'i') {
     const safeQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (query.length >= 5) {
@@ -104,6 +121,7 @@ function scrollToHeader(container, query, fullHeaderText) {
             if (best) {
                 best.scrollIntoView({ behavior: 'auto', block: 'center' });
                 best.style.backgroundColor = "#ffff00";
+                best.style.transition = "background 2s";
             } else if (query) {
                 scrollToIndex(container, query, 0);
             }

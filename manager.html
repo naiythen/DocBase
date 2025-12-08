@@ -17,141 +17,165 @@
         .nav-btn:hover { background: #1557b0; }
 
         /* Main Container */
-        .main-container { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: all 0.3s ease; padding-bottom: 100px; }
-        
+        .main-container { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: all 0.3s ease; padding-bottom: 50px; }
         body.has-results .main-container { justify-content: flex-start; padding-top: 20px; padding-bottom: 0; }
         body.has-results .logo { font-size: 24px; margin-bottom: 15px; }
         body.has-results .search-wrapper { max-width: 800px; }
         
-        .logo { font-size: 60px; font-weight: bold; color: #444; margin-bottom: 30px; letter-spacing: -2px; }
+        .logo { font-size: 60px; font-weight: bold; color: #444; margin-bottom: 20px; letter-spacing: -2px; }
         .logo span { color: #4285f4; }
-        .search-wrapper { width: 100%; max-width: 584px; }
+        .search-wrapper { width: 100%; max-width: 584px; display: flex; flex-direction: column; gap: 10px; }
+        
         input[type="text"] { width: 100%; padding: 14px 20px; font-size: 16px; border: 1px solid #dfe1e5; border-radius: 24px; outline: none; box-sizing: border-box; transition: box-shadow 0.2s; }
         input[type="text"]:focus { box-shadow: 0 1px 6px rgba(32,33,36,0.3); }
-        
+
+        /* Filters */
+        #db-filter-container { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 5px; }
+        .filter-chip { padding: 6px 12px; border: 1px solid #dadce0; border-radius: 16px; font-size: 13px; cursor: pointer; color: #5f6368; background: white; user-select: none; transition: all 0.2s; }
+        .filter-chip:hover { background: #f1f3f4; }
+        .filter-chip.active { background: #e8f0fe; color: #1a73e8; border-color: #1a73e8; font-weight: 600; }
+
         /* Results Area */
         #results-area { max-width: 800px; margin: 0 auto; width: 100%; padding: 20px; display: none; }
         body.has-results #results-area { display: block; }
-
         .no-results { text-align: center; color: #5f6368; margin-top: 40px; font-size: 16px; }
         .result-item { margin-bottom: 30px; }
-        
         .result-url { color: #5f6368; font-size: 14px; margin-bottom: 4px; }
         .title-row { display: flex; align-items: center; gap: 10px; }
         .result-title { font-size: 20px; color: #1a0dab; cursor: pointer; display: block; text-decoration: none; line-height: 1.3; }
         .result-title:hover { text-decoration: underline; }
-        
         .snippet { color: #4d5156; font-size: 14px; line-height: 1.58; }
         .search-match { font-weight: bold; color: #e91e63; } 
 
-        /* --- PREVIEW WINDOW STYLES (UPDATED) --- */
-        .viewer-wrapper {
-            position: relative; /* Anchor for the absolute button */
-            margin-top: 15px;
-            border: 1px solid #dadce0;
-            border-radius: 8px;
-            background: #fff;
-            display: none; 
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
+        /* Viewer */
+        .viewer-wrapper { position: relative; margin-top: 15px; border: 1px solid #dadce0; border-radius: 8px; background: #fff; display: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); overflow: hidden; }
+        .doc-viewer-container { height: 70vh; min-height: 600px; overflow-y: auto; background: #f8f9fa; position: relative; }
+        .popout-btn-overlay { position: absolute; top: 20px; right: 25px; z-index: 1000; width: 45px; height: 45px; border-radius: 50%; background: white; border: 1px solid #dadce0; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: all 0.2s ease; }
+        .popout-btn-overlay:hover { background-color: #f1f3f4; transform: scale(1.1); }
+        .popout-btn-overlay svg { width: 22px; height: 22px; fill: #5f6368; }
 
-        .doc-viewer-container {
-            height: 70vh; /* Occupy 70% of screen height */
-            min-height: 600px; /* Force minimum height */
-            overflow-y: auto;
-            background: #f8f9fa;
-            position: relative;
-        }
-
-        /* Floating Popout Button */
-        .popout-btn-overlay {
-            position: absolute;
-            top: 20px;
-            right: 25px; /* Stick to right corner */
-            z-index: 1000; /* Sit on top of document */
-            width: 45px;
-            height: 45px;
-            border-radius: 50%;
-            background: white;
-            border: 1px solid #dadce0;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-            transition: all 0.2s ease;
-        }
-        .popout-btn-overlay:hover {
-            background-color: #f1f3f4;
-            transform: scale(1.1);
-        }
-        .popout-btn-overlay svg {
-            width: 22px;
-            height: 22px;
-            fill: #5f6368;
-        }
-
-        /* Modal */
+        /* MANAGER MODAL */
         #manager-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; justify-content: center; align-items: center; }
-        .modal-content { background: white; width: 800px; max-height: 90%; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
-        .modal-header { padding: 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: #f8f9fa; }
+        .modal-content { background: white; width: 900px; height: 80vh; border-radius: 8px; display: flex; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+        .modal-sidebar { width: 250px; background: #f8f9fa; border-right: 1px solid #dadce0; display: flex; flex-direction: column; }
+        .sidebar-header { padding: 20px; font-weight: bold; color: #5f6368; font-size: 14px; text-transform: uppercase; border-bottom: 1px solid #eee; }
+        .db-list { flex: 1; overflow-y: auto; padding: 10px; }
+        .db-item { padding: 10px 15px; margin-bottom: 5px; cursor: pointer; border-radius: 4px; color: #202124; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+        .db-item:hover { background: #e8f0fe; }
+        .db-item.active { background: #e8f0fe; color: #1a73e8; font-weight: 600; }
+        .sidebar-footer { padding: 15px; border-top: 1px solid #dadce0; }
+        .create-db-btn { width: 100%; padding: 8px; background: white; border: 1px solid #dadce0; border-radius: 4px; cursor: pointer; color: #1a73e8; font-weight: 500; }
+        .create-db-btn:hover { background: #f1f3f4; }
+        .modal-main { flex: 1; display: flex; flex-direction: column; }
+        .modal-header { padding: 15px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: white; }
         .close-btn { cursor: pointer; font-size: 24px; border: none; background: none; }
-        .modal-body { padding: 20px; overflow-y: auto; flex: 1; }
-        
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th { text-align: left; padding: 10px; border-bottom: 2px solid #eee; }
-        td { padding: 10px; border-bottom: 1px solid #eee; font-size: 14px; vertical-align: middle; }
-        .action-btn { padding: 5px 10px; border: 1px solid #dadce0; border-radius: 4px; background: white; cursor: pointer; margin-right: 5px; }
-        .action-btn:hover { background: #f1f3f4; }
-        .btn-delete { color: #d93025; border-color: #f28b82; }
-        .btn-delete:hover { background: #fce8e6; }
-        
-        .upload-area { background: #e8f0fe; border: 2px dashed #1a73e8; border-radius: 8px; padding: 30px; text-align: center; margin-bottom: 20px; color: #1a73e8; cursor: pointer; position: relative; }
+        .modal-body { padding: 20px; overflow-y: auto; flex: 1; background: white; }
+        .db-actions-row { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; }
+        .action-icon-btn { cursor: pointer; background: none; border: none; font-size: 16px; padding: 5px; border-radius: 4px; color: #5f6368; }
+        .action-icon-btn:hover { background: #eee; color: #202124; }
+        .upload-area { background: #f8f9fa; border: 2px dashed #dadce0; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 20px; color: #1a73e8; cursor: pointer; position: relative; }
+        .upload-area:hover { border-color: #1a73e8; background: #e8f0fe; }
         .upload-area input { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 10px; border-bottom: 2px solid #eee; color: #5f6368; font-size: 13px; }
+        td { padding: 10px; border-bottom: 1px solid #eee; font-size: 14px; vertical-align: middle; }
+        
+        /* File Action Buttons */
+        .btn-delete-file { color: #d93025; background: none; border: none; cursor: pointer; font-size: 16px; padding: 4px 8px; }
+        .btn-delete-file:hover { background: #fce8e6; border-radius: 4px; }
+        .btn-rename-file { color: #1a73e8; background: none; border: none; cursor: pointer; font-size: 16px; padding: 4px 8px; margin-right: 5px; }
+        .btn-rename-file:hover { background: #e8f0fe; border-radius: 4px; }
+
+        /* TOAST */
+        #toast-container { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #323232; color: white; padding: 12px 24px; border-radius: 4px; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 3000; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+        #toast-container.show { opacity: 1; }
+
+        /* DIALOG */
+        #dialog-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 4000; justify-content: center; align-items: center; }
+        .dialog-box { background: white; width: 400px; border-radius: 8px; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+        .dialog-title { font-weight: bold; font-size: 18px; margin-bottom: 10px; }
+        .dialog-msg { font-size: 14px; color: #555; margin-bottom: 20px; line-height: 1.5; }
+        .dialog-input { width: 100%; padding: 10px; border: 1px solid #dadce0; border-radius: 4px; margin-bottom: 20px; box-sizing: border-box; font-size: 14px; display: none; }
+        .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
+        .dialog-btn { padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 500; border: none; font-size: 14px; }
+        .btn-cancel { background: white; color: #1a73e8; border: 1px solid #dadce0; }
+        .btn-cancel:hover { background: #f8f9fa; }
+        .btn-confirm { background: #1a73e8; color: white; }
+        .btn-confirm:hover { background: #1557b0; }
+        .btn-danger { background: #d93025; color: white; }
+        .btn-danger:hover { background: #a50e0e; }
     </style>
 </head>
 <body>
     <div class="top-nav">
-        <button id="open-manager-btn" class="nav-btn">Manage Database</button>
+        <button id="open-manager-btn" class="nav-btn">Manage Databases</button>
     </div>
 
     <div class="main-container">
         <div class="logo">Doc<span>Base</span></div>
         <div class="search-wrapper">
             <input type="text" id="search-box" placeholder="Search your local documents...">
+            <div id="db-filter-container"></div>
         </div>
     </div>
 
     <div id="results-area"></div>
 
+    <div id="toast-container">Action Successful</div>
+
+    <div id="dialog-overlay">
+        <div class="dialog-box">
+            <div class="dialog-title" id="dialog-title">Confirm</div>
+            <div class="dialog-msg" id="dialog-msg">Are you sure?</div>
+            <input type="text" id="dialog-input" class="dialog-input" placeholder="Enter value...">
+            <div class="dialog-actions">
+                <button class="dialog-btn btn-cancel" id="dialog-cancel-btn">Cancel</button>
+                <button class="dialog-btn btn-confirm" id="dialog-ok-btn">OK</button>
+            </div>
+        </div>
+    </div>
+
     <div id="manager-modal">
         <div class="modal-content">
-            <div class="modal-header">
-                <h2>File Manager</h2>
-                <button class="close-btn" id="close-manager-btn">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="upload-area">
-                    <h3>+ Upload .docx Files</h3>
-                    <input type="file" id="file-input" multiple accept=".docx" />
+            <div class="modal-sidebar">
+                <div class="sidebar-header">My Databases</div>
+                <div class="db-list" id="db-list-container"></div>
+                <div class="sidebar-footer">
+                    <button id="create-db-btn" class="create-db-btn">+ New Database</button>
                 </div>
-                <div id="upload-status" style="margin-bottom:15px; color: #188038; font-weight:bold;"></div>
-
-                <h3>Stored Files</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>File Name</th>
-                            <th>Date</th>
-                            <th style="width: 150px;">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="file-list-body"></tbody>
-                </table>
-
-                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; text-align: right;">
-                    <button id="reset-db-btn" class="action-btn btn-delete">⚠ Clear Entire Database</button>
+            </div>
+            <div class="modal-main">
+                <div class="modal-header">
+                    <div class="modal-title-row">
+                        <h2 id="current-db-name">Select a Database</h2>
+                        <div class="db-actions-row" id="db-actions-row" style="display:none;">
+                            <button id="rename-db-btn" class="action-icon-btn" title="Rename Database">✎</button>
+                            <button id="delete-db-btn" class="action-icon-btn" title="Delete Database" style="color:#d93025;">🗑</button>
+                        </div>
+                    </div>
+                    <button class="close-btn" id="close-manager-btn">&times;</button>
+                </div>
+                <div class="modal-body" id="modal-files-body">
+                    <div id="no-db-selected-msg" style="text-align:center; color:#999; margin-top:50px;">
+                        Select a database from the left to manage files.
+                    </div>
+                    <div id="active-db-view" style="display:none;">
+                        <div class="upload-area">
+                            <h3>+ Add Files to <span id="upload-db-name-label"></span></h3>
+                            <input type="file" id="file-input" multiple accept=".docx" />
+                        </div>
+                        <div id="upload-status" style="margin-bottom:15px; color: #188038; font-weight:bold;"></div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>File Name</th>
+                                    <th>Date</th>
+                                    <th style="width: 80px;"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="file-list-body"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
