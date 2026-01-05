@@ -11,12 +11,25 @@ const matchIndex = params.has('idx') ? parseInt(params.get('idx')) : -1;
 const titleEl = document.getElementById('doc-title');
 const container = document.getElementById('doc-container');
 const statusEl = document.getElementById('status');
-const downloadBtn = document.getElementById('download-btn'); // Updated selector
+const downloadBtn = document.getElementById('download-btn');
 const sidebar = document.getElementById('outline-sidebar');
 const sidebarContent = document.getElementById('outline-content');
 const resizer = document.getElementById('resizer');
 
+// Search elements
+const viewerSearchInput = document.getElementById('viewer-search-input');
+const viewerSearchCount = document.getElementById('viewer-search-count');
+const viewerSearchPrev = document.getElementById('viewer-search-prev');
+const viewerSearchNext = document.getElementById('viewer-search-next');
+const searchResultsPanel = document.getElementById('search-results-panel');
+const searchResultsList = document.getElementById('search-results-list');
+const closeSearchPanel = document.getElementById('close-search-panel');
+
+let internalSearchResults = [];
+let internalSearchIndex = 0;
+
 initResizer();
+initSearch();
 
 if (!docId) {
     statusEl.textContent = "Error: No document ID provided.";
@@ -215,4 +228,246 @@ function generateOutline(container) {
         row.appendChild(label);
         sidebarContent.appendChild(row);
     });
+}
+
+// ==================== INTERNAL SEARCH FUNCTIONALITY ====================
+
+function initSearch() {
+    let searchDebounce;
+    
+    viewerSearchInput.addEventListener('input', () => {
+        clearTimeout(searchDebounce);
+        searchDebounce = setTimeout(() => {
+            performInternalSearch(viewerSearchInput.value);
+        }, 300);
+    });
+
+    viewerSearchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (e.shiftKey) {
+                navigateResult(-1);
+            } else {
+                navigateResult(1);
+            }
+        }
+    });
+
+    viewerSearchPrev.addEventListener('click', () => navigateResult(-1));
+    viewerSearchNext.addEventListener('click', () => navigateResult(1));
+    closeSearchPanel.addEventListener('click', () => {
+        searchResultsPanel.classList.remove('active');
+    });
+}
+
+function performInternalSearch(query) {
+    internalSearchResults = [];
+    internalSearchIndex = 0;
+    searchResultsList.innerHTML = '';
+    
+    // Clear previous highlights
+    container.querySelectorAll('.internal-search-highlight').forEach(el => {
+        const parent = el.parentNode;
+        if (parent) {
+            parent.replaceChild(document.createTextNode(el.textContent), el);
+            parent.normalize();
+        }
+    });
+    
+    if (!query || !query.trim()) {
+        viewerSearchCount.textContent = '';
+        searchResultsPanel.classList.remove('active');
+        return;
+    }
+    
+    const searchTerm = query.trim().toLowerCase();
+    const allResults = [];
+    
+    const headingRegex = /Heading\s*([1-6])/i;
+    const titleRegex = /Title|Subtitle/i;
+    const processedHeaders = new Set();
+    
+    // Walk through all text nodes in document order to maintain position
+    // Use getSmartRegex for word boundary matching on short words (< 5 chars)
+    const regex = getSmartRegex(searchTerm, 'gi');
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+    let node;
+    
+    while ((node = walker.nextNode())) {
+        const text = node.textContent;
+        const parentEl = node.parentElement;
+        if (!parentEl) continue;
+        
+        // Check if this node is inside a header by walking up the tree
+        let isInHeader = false;
+        let headerEl = null;
+        let checkEl = parentEl;
+        
+        while (checkEl && checkEl !== container) {
+            if (/^H[1-6]$/.test(checkEl.tagName)) {
+                isInHeader = true;
+                headerEl = checkEl;
+                break;
+            } else if (checkEl.className && typeof checkEl.className === 'string') {
+                if (headingRegex.test(checkEl.className) || titleRegex.test(checkEl.className)) {
+                    isInHeader = true;
+                    headerEl = checkEl;
+                    break;
+                }
+            }
+            // Check for bold paragraph headers
+            if (checkEl.tagName === 'P') {
+                const style = window.getComputedStyle(checkEl);
+                const isBold = style.fontWeight === '700' || style.fontWeight === 'bold' || checkEl.querySelector('b, strong');
+                if (isBold && parseFloat(style.fontSize) > 14) {
+                    isInHeader = true;
+                    headerEl = checkEl;
+                    break;
+                }
+            }
+            checkEl = checkEl.parentElement;
+        }
+        
+        let match;
+        regex.lastIndex = 0;
+        
+        while ((match = regex.exec(text)) !== null) {
+            if (isInHeader && headerEl) {
+                // Header result - only add once per unique header
+                const headerText = headerEl.textContent.trim();
+                if (!processedHeaders.has(headerText) && headerText.length <= 120) {
+                    processedHeaders.add(headerText);
+                    allResults.push({
+                        type: 'header',
+                        element: headerEl,
+                        text: headerText,
+                        matchText: headerText
+                    });
+                }
+            } else {
+                // Body result
+                const start = Math.max(0, match.index - 40);
+                const end = Math.min(text.length, match.index + match[0].length + 40);
+                let snippet = text.substring(start, end).trim();
+                if (start > 0) snippet = '...' + snippet;
+                if (end < text.length) snippet = snippet + '...';
+                
+                allResults.push({
+                    type: 'body',
+                    node: node,
+                    index: match.index,
+                    length: match[0].length,
+                    text: snippet,
+                    matchText: match[0]
+                });
+            }
+        }
+    }
+    
+    // Results are already in document order since we walked through the DOM in order
+    internalSearchResults = allResults;
+    
+    const totalCount = internalSearchResults.length;
+    viewerSearchCount.textContent = totalCount > 0 ? `1 / ${totalCount}` : 'No results';
+    
+    if (totalCount > 0) {
+        searchResultsPanel.classList.add('active');
+        renderSearchResults(searchTerm);
+        highlightAndScrollToResult(0);
+    } else {
+        searchResultsPanel.classList.remove('active');
+    }
+}
+
+function renderSearchResults(searchTerm) {
+    searchResultsList.innerHTML = '';
+    const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    
+    internalSearchResults.forEach((result, index) => {
+        const item = document.createElement('div');
+        item.className = 'search-result-item' + (index === 0 ? ' active' : '');
+        item.dataset.index = index;
+        
+        const typeLabel = document.createElement('div');
+        typeLabel.className = `search-result-type ${result.type}`;
+        typeLabel.textContent = result.type === 'header' ? 'Header' : 'Body';
+        
+        const textDiv = document.createElement('div');
+        textDiv.className = 'search-result-text';
+        textDiv.innerHTML = result.text.replace(regex, '<mark>$1</mark>');
+        
+        item.appendChild(typeLabel);
+        item.appendChild(textDiv);
+        
+        item.addEventListener('click', () => {
+            internalSearchIndex = index;
+            highlightAndScrollToResult(index);
+            updateActiveResultItem();
+        });
+        
+        searchResultsList.appendChild(item);
+    });
+}
+
+function highlightAndScrollToResult(index) {
+    if (internalSearchResults.length === 0) return;
+    
+    // Clear previous active highlights
+    container.querySelectorAll('.internal-search-active').forEach(el => {
+        el.classList.remove('internal-search-active');
+        el.style.backgroundColor = '#ffff99';
+    });
+    
+    const result = internalSearchResults[index];
+    if (!result) return;
+    
+    viewerSearchCount.textContent = `${index + 1} / ${internalSearchResults.length}`;
+    
+    if (result.type === 'header') {
+        // For headers, scroll to and highlight the entire header element
+        result.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        result.element.style.backgroundColor = '#ffcc00';
+        result.element.style.transition = 'background 0.3s';
+        result.element.classList.add('internal-search-active');
+    } else {
+        // For body results, highlight the specific match
+        try {
+            if (result.node && result.node.parentNode) {
+                const range = document.createRange();
+                range.setStart(result.node, result.index);
+                range.setEnd(result.node, result.index + result.length);
+                const span = document.createElement('span');
+                span.className = 'internal-search-highlight internal-search-active';
+                span.style.backgroundColor = '#ffcc00';
+                span.style.color = 'black';
+                range.surroundContents(span);
+                span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        } catch (e) {
+            if (result.node && result.node.parentElement) {
+                result.node.parentElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                result.node.parentElement.style.backgroundColor = '#ffcc00';
+            }
+        }
+    }
+    
+    updateActiveResultItem();
+}
+
+function updateActiveResultItem() {
+    searchResultsList.querySelectorAll('.search-result-item').forEach((item, i) => {
+        item.classList.toggle('active', i === internalSearchIndex);
+    });
+    
+    // Scroll the active item into view in the results panel
+    const activeItem = searchResultsList.querySelector('.search-result-item.active');
+    if (activeItem) {
+        activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+function navigateResult(direction) {
+    if (internalSearchResults.length === 0) return;
+    internalSearchIndex = (internalSearchIndex + direction + internalSearchResults.length) % internalSearchResults.length;
+    highlightAndScrollToResult(internalSearchIndex);
 }
