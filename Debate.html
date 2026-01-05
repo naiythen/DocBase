@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Formatted Text Extractor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        #rich-text-area {
+            min-height: 400px;
+            border: 2px solid rgb(229, 231, 235);
+            outline: none;
+            padding: 1.5rem;
+            line-height: 1.6;
+            transition: all 0.2s ease-in-out;
+            cursor: text;
+            white-space: pre-wrap; 
+        }
+        #rich-text-area:focus {
+            border-color: rgb(59, 130, 246);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
+        }
+        .initial-placeholder {
+            color: #9ca3af;
+        }
+        #rich-text-area:not(:empty) > p.initial-placeholder {
+            display: none;
+        }
+        #history-dropdown {
+            border-color: rgb(209, 213, 219);
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+        }
+        #confirmation-overlay, #settings-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        #confirmation-box, #settings-box {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.2);
+            max-width: 500px;
+            width: 90%;
+        }
+        #confirmation-box {
+            text-align: center;
+            max-width: 400px;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 48px;
+            height: 24px;
+            background-color: #d1d5db;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .toggle-switch.active {
+            background-color: #4f46e5;
+        }
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background-color: white;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+        .toggle-switch.active::after {
+            transform: translateX(24px);
+        }
+        .speaker-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            background: #f9fafb;
+            border-radius: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        #timing-sidebar {
+            position: fixed;
+            right: 0.5rem;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 160px;
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+            padding: 0.75rem;
+            z-index: 100;
+            font-size: 0.8rem;
+        }
+        @media (max-width: 1200px) {
+            #timing-sidebar {
+                position: static;
+                transform: none;
+                width: 100%;
+                margin-top: 1.5rem;
+            }
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+        
+        const HISTORY_KEY = 'formattedTextExtractorHistory';
+        const SETTINGS_KEY = 'formattedTextExtractorSettings';
+        const SPEAKERS_KEY = 'formattedTextExtractorSpeakers';
+        
+        // Default settings
+        let extractionSettings = {
+            underlined: true,
+            bolded: true,
+            highlighted: false,
+            removeUnderlineOnPaste: false
+        };
+        
+        // Default speakers
+        let speakers = [
+            { id: 1, name: 'Speaker 1', wpm: 150 }
+        ];
+        
+        function loadSettings() {
+            try {
+                const settingsJson = localStorage.getItem(SETTINGS_KEY);
+                if (settingsJson) {
+                    extractionSettings = JSON.parse(settingsJson);
+                }
+                const speakersJson = localStorage.getItem(SPEAKERS_KEY);
+                if (speakersJson) {
+                    speakers = JSON.parse(speakersJson);
+                }
+            } catch (e) {
+                console.error("Error loading settings:", e);
+            }
+        }
+        
+        function saveSettings() {
+            try {
+                localStorage.setItem(SETTINGS_KEY, JSON.stringify(extractionSettings));
+                localStorage.setItem(SPEAKERS_KEY, JSON.stringify(speakers));
+            } catch (e) {
+                console.error("Error saving settings:", e);
+            }
+        }
+        
+        function loadHistoryFromStorage() {
+            try {
+                const historyJson = localStorage.getItem(HISTORY_KEY);
+                return historyJson ? JSON.parse(historyJson) : [];
+            } catch (e) {
+                console.error("Error loading history from storage:", e);
+                return [];
+            }
+        }
+
+        function saveHistoryToStorage(history) {
+            try {
+                localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+            } catch (e) {
+                console.error("Error saving history to storage:", e);
+            }
+        }
+
+        function addHistoryEntry(inputHtml, inputText) {
+            const history = loadHistoryFromStorage();
+            const timestamp = Date.now();
+            const date = new Date(timestamp).toLocaleTimeString();
+            
+            const baseTitle = inputText.substring(0, 20).trim();
+            const ellipsis = inputText.length > 20 ? '...' : '';
+
+            const newEntry = {
+                id: timestamp,
+                input: inputHtml,
+                title: `${baseTitle}${ellipsis} (${date})`
+            };
+
+            history.unshift(newEntry);
+            saveHistoryToStorage(history);
+            renderHistoryDropdown();
+        }
+
+        function renderHistoryDropdown() {
+            const history = loadHistoryFromStorage();
+            const dropdown = document.getElementById('history-dropdown');
+            const historyContainer = document.getElementById('history-container');
+            
+            dropdown.innerHTML = '<option value="">-- Select Past Input --</option>';
+
+            if (history.length === 0) {
+                historyContainer.classList.add('hidden');
+                return;
+            }
+
+            historyContainer.classList.remove('hidden');
+
+            history.forEach(entry => {
+                const option = document.createElement('option');
+                option.value = entry.id;
+                option.textContent = entry.title;
+                dropdown.appendChild(option);
+            });
+        }
+        
+        function loadSelectedInput() {
+            const dropdown = document.getElementById('history-dropdown');
+            const selectedId = parseInt(dropdown.value, 10);
+            
+            if (!selectedId) {
+                showMessage('Please select an input from the history first.', 'bg-yellow-100 border-yellow-400 text-yellow-700');
+                return;
+            }
+
+            const history = loadHistoryFromStorage();
+            const entry = history.find(e => e.id === selectedId);
+
+            if (entry) {
+                const richTextDiv = document.getElementById('rich-text-area');
+                richTextDiv.innerHTML = entry.input;
+                showMessage(`Loaded: ${entry.title}`, 'bg-blue-100 border-blue-400 text-blue-700');
+                updateTimingSidebar();
+            }
+        }
+
+        function scrollToExtractionButton() {
+            const buttonContainer = document.getElementById('extraction-button-container');
+            if (buttonContainer) {
+                buttonContainer.scrollIntoView({ behavior: 'instant', block: 'center' });
+            }
+        }
+        
+        function renameSelectedInput() {
+            const dropdown = document.getElementById('history-dropdown');
+            const selectedId = parseInt(dropdown.value, 10);
+            const renameInput = document.getElementById('rename-input');
+            const newTitle = renameInput.value.trim();
+            
+            if (!selectedId) {
+                showMessage('Please select an input to rename.', 'bg-yellow-100 border-yellow-400 text-yellow-700');
+                return;
+            }
+            if (!newTitle) {
+                showMessage('The new name cannot be empty.', 'bg-yellow-100 border-yellow-400 text-yellow-700');
+                return;
+            }
+
+            let history = loadHistoryFromStorage();
+            const entryIndex = history.findIndex(e => e.id === selectedId);
+
+            if (entryIndex !== -1) {
+                history[entryIndex].title = newTitle;
+                saveHistoryToStorage(history);
+                renderHistoryDropdown();
+                renameInput.value = '';
+                showMessage(`Renamed to: ${newTitle}`, 'bg-green-100 border-green-400 text-green-700');
+            }
+        }
+        
+        function clearHistory() {
+            showConfirmation('Are you sure you want to clear ALL historical inputs? This cannot be undone.', executeClearHistory);
+        }
+
+        function executeClearHistory() {
+            localStorage.removeItem(HISTORY_KEY);
+            renderHistoryDropdown();
+            hideConfirmation();
+            showMessage('History cleared successfully!', 'bg-green-100 border-green-400 text-green-700');
+        }
+
+        let confirmAction = null;
+        function showConfirmation(message, onConfirm) {
+            confirmAction = onConfirm;
+            document.getElementById('confirmation-message').textContent = message;
+            document.getElementById('confirmation-overlay').style.display = 'flex';
+        }
+
+        function hideConfirmation() {
+            confirmAction = null;
+            document.getElementById('confirmation-overlay').style.display = 'none';
+        }
+
+        function handleConfirm() {
+            if (confirmAction) {
+                confirmAction();
+            }
+        }
+
+        function clearTextbox() {
+            const richTextDiv = document.getElementById('rich-text-area');
+            richTextDiv.innerHTML = '';
+            showMessage('Textbox content cleared.', 'bg-blue-100 border-blue-400 text-blue-700');
+            updateTimingSidebar();
+        }
+        
+        // ============ SETTINGS PANEL ============
+        function openSettings() {
+            renderSettingsPanel();
+            document.getElementById('settings-overlay').style.display = 'flex';
+        }
+        
+        function closeSettings() {
+            document.getElementById('settings-overlay').style.display = 'none';
+        }
+        
+        function renderSettingsPanel() {
+            updateToggle('toggle-underlined', extractionSettings.underlined);
+            updateToggle('toggle-bolded', extractionSettings.bolded);
+            updateToggle('toggle-highlighted', extractionSettings.highlighted);
+            renderSpeakersList();
+        }
+        
+        function updateToggle(id, isActive) {
+            const toggle = document.getElementById(id);
+            if (toggle) {
+                if (isActive) {
+                    toggle.classList.add('active');
+                } else {
+                    toggle.classList.remove('active');
+                }
+            }
+        }
+        
+        function toggleSetting(settingName) {
+            extractionSettings[settingName] = !extractionSettings[settingName];
+            updateToggle(`toggle-${settingName}`, extractionSettings[settingName]);
+            saveSettings();
+        }
+        
+        function renderSpeakersList() {
+            const container = document.getElementById('speakers-list');
+            container.innerHTML = '';
+            
+            speakers.forEach((speaker, index) => {
+                const item = document.createElement('div');
+                item.className = 'speaker-item';
+                item.innerHTML = `
+                    <input 
+                        type="text" 
+                        value="${speaker.name}" 
+                        onchange="updateSpeakerName(${speaker.id}, this.value)"
+                        class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
+                        placeholder="Name"
+                    />
+                    <input 
+                        type="number" 
+                        value="${speaker.wpm}" 
+                        onchange="updateSpeakerWpm(${speaker.id}, this.value)"
+                        class="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+                        placeholder="WPM"
+                        min="50"
+                        max="500"
+                    />
+                    <span class="text-xs text-gray-500">WPM</span>
+                    <button 
+                        onclick="removeSpeaker(${speaker.id})"
+                        class="p-1 text-red-500 hover:text-red-700 transition"
+                        title="Remove speaker"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                `;
+                container.appendChild(item);
+            });
+        }
+        
+        function addSpeaker() {
+            const newId = speakers.length > 0 ? Math.max(...speakers.map(s => s.id)) + 1 : 1;
+            speakers.push({
+                id: newId,
+                name: `Speaker ${newId}`,
+                wpm: 150
+            });
+            saveSettings();
+            renderSpeakersList();
+            updateTimingSidebar();
+        }
+        
+        function removeSpeaker(id) {
+            if (speakers.length <= 1) {
+                showMessage('You must have at least one speaker.', 'bg-yellow-100 border-yellow-400 text-yellow-700');
+                return;
+            }
+            speakers = speakers.filter(s => s.id !== id);
+            saveSettings();
+            renderSpeakersList();
+            updateTimingSidebar();
+        }
+        
+        function updateSpeakerName(id, name) {
+            const speaker = speakers.find(s => s.id === id);
+            if (speaker) {
+                speaker.name = name;
+                saveSettings();
+                updateTimingSidebar();
+            }
+        }
+        
+        function updateSpeakerWpm(id, wpm) {
+            const speaker = speakers.find(s => s.id === id);
+            if (speaker) {
+                speaker.wpm = parseInt(wpm, 10) || 150;
+                saveSettings();
+                updateTimingSidebar();
+            }
+        }
+        
+        // ============ TIMING SIDEBAR ============
+        function updateTimingSidebar() {
+            const richTextDiv = document.getElementById('rich-text-area');
+            const text = richTextDiv.textContent.trim();
+            const wordCount = text ? text.split(/\s+/).filter(w => w.length > 0).length : 0;
+            
+            document.getElementById('sidebar-word-count').textContent = wordCount;
+            
+            const container = document.getElementById('sidebar-timing-results');
+            container.innerHTML = '';
+            
+            if (wordCount === 0) {
+                container.innerHTML = '<p class="text-gray-400 text-xs text-center">No content yet</p>';
+                return;
+            }
+            
+            speakers.forEach(speaker => {
+                const minutes = wordCount / speaker.wpm;
+                const mins = Math.floor(minutes);
+                const secs = Math.round((minutes - mins) * 60);
+                
+                const item = document.createElement('div');
+                item.className = 'flex justify-between items-center text-sm py-1';
+                item.innerHTML = `
+                    <span class="text-gray-600 truncate" title="${speaker.name}">${speaker.name}</span>
+                    <span class="text-indigo-600 font-medium ml-2">${mins}m ${secs}s</span>
+                `;
+                container.appendChild(item);
+            });
+        }
+        
+        // ============ FORMATTING DETECTION ============
+        
+        function isHighlightColor(color) {
+            if (!color || color === 'transparent' || color === '' || color === 'initial') {
+                return false;
+            }
+            if (color === 'rgba(0, 0, 0, 0)') return false;
+            if (color === 'rgb(255, 255, 255)' || color === 'rgba(255, 255, 255, 1)') return false;
+            const rgbMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+            if (rgbMatch) {
+                const r = parseInt(rgbMatch[1]);
+                const g = parseInt(rgbMatch[2]);
+                const b = parseInt(rgbMatch[3]);
+                if (r > 240 && g > 240 && b > 240) return false;
+            }
+            return true;
+        }
+        
+        /**
+         * Detects formatting properties of an element
+         */
+        function getElementFormatting(element) {
+            if (!element || element.nodeType !== 1) return { bold: false, underlined: false, highlighted: false };
+            
+            const style = element.style;
+            const computedStyle = window.getComputedStyle(element);
+            const className = (element.className || '').toString().toLowerCase();
+            
+            let isBold = false;
+            let isUnderlined = false;
+            let isHighlighted = false;
+            
+            // Check BOLD
+            if (['B', 'STRONG'].includes(element.tagName)) {
+                isBold = true;
+            }
+            const fontWeight = style.fontWeight || '';
+            const computedFontWeight = computedStyle.fontWeight || '';
+            if (fontWeight === 'bold' || parseInt(fontWeight, 10) >= 700) {
+                isBold = true;
+            }
+            if (computedFontWeight === 'bold' || parseInt(computedFontWeight, 10) >= 700) {
+                isBold = true;
+            }
+            if (className.includes('bold')) {
+                isBold = true;
+            }
+            
+            // Check UNDERLINE
+            if (element.tagName === 'U') {
+                isUnderlined = true;
+            }
+            const textDecoration = style.textDecoration || style.textDecorationLine || '';
+            const computedTextDecoration = computedStyle.textDecoration || computedStyle.textDecorationLine || '';
+            if (textDecoration.includes('underline') || computedTextDecoration.includes('underline')) {
+                isUnderlined = true;
+            }
+            if (className.includes('underline') || className.includes('emphasis')) {
+                isUnderlined = true;
+            }
+            
+            // Check HIGHLIGHT
+            if (element.tagName === 'MARK') {
+                isHighlighted = true;
+            }
+            const bgColor = style.backgroundColor || '';
+            const computedBgColor = computedStyle.backgroundColor || '';
+            if (isHighlightColor(bgColor) || isHighlightColor(computedBgColor)) {
+                isHighlighted = true;
+            }
+            if (className.includes('highlight')) {
+                isHighlighted = true;
+            }
+            
+            return { bold: isBold, underlined: isUnderlined, highlighted: isHighlighted };
+        }
+        
+        /**
+         * Checks if element should be extracted based on current settings
+         * Rules:
+         * - Highlighted: always show if has highlight (regardless of other formatting)
+         * - Underlined: show anything with underline (regardless of other formatting)
+         * - Bolded (alone): show ONLY pure bold (not underlined)
+         */
+        function isFormattingElement(element) {
+            if (!element || element.nodeType !== 1) return false;
+
+            // BLOCK-LEVEL ELEMENTS should NEVER be considered "formatted"
+            const blockTags = ['P', 'DIV', 'SECTION', 'ARTICLE', 'HEADER', 'FOOTER', 'NAV', 
+                               'ASIDE', 'MAIN', 'TABLE', 'TR', 'TD', 'TH', 'TBODY', 'THEAD',
+                               'UL', 'OL', 'LI', 'DL', 'DT', 'DD', 'BLOCKQUOTE', 'PRE', 
+                               'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'BR', 'FIGURE', 'FIGCAPTION'];
+            if (blockTags.includes(element.tagName)) {
+                return false;
+            }
+            
+            // If nothing is selected, show nothing
+            if (!extractionSettings.underlined && !extractionSettings.bolded && !extractionSettings.highlighted) {
+                return false;
+            }
+
+            const formatting = getElementFormatting(element);
+            
+            // Rule: Highlighted always shows if it has highlight
+            if (extractionSettings.highlighted && formatting.highlighted) {
+                return true;
+            }
+            
+            // Rule: Underlined shows anything with underline
+            if (extractionSettings.underlined && formatting.underlined) {
+                return true;
+            }
+            
+            // Rule: Bolded (when underlined is NOT selected) shows bold OR bold+underlined
+            if (extractionSettings.bolded && !extractionSettings.underlined) {
+                // Show if bold (including bold+underlined)
+                if (formatting.bold) {
+                    return true;
+                }
+            }
+            
+            // Rule: Bolded (when underlined IS selected) - bold is included via underline check above
+            // But also show pure bold
+            if (extractionSettings.bolded && extractionSettings.underlined) {
+                if (formatting.bold) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        function collectFormattedContent(node, extractedHtmlChunks) {
+            if (node.nodeType === 1) {
+                if (isFormattingElement(node)) {
+                    const trimmedText = node.textContent.trim();
+                    
+                    if (trimmedText.length > 0) {
+                        extractedHtmlChunks.push(node.outerHTML);
+                        return; 
+                    }
+                }
+            }
+            
+            if (node.hasChildNodes()) {
+                node.childNodes.forEach(child => collectFormattedContent(child, extractedHtmlChunks));
+            }
+        }
+
+        function extractOnlyFormattedText() {
+            const richTextDiv = document.getElementById('rich-text-area');
+
+            if (!richTextDiv.textContent.trim()) {
+                showMessage('The text area is empty! Nothing to extract.', 'bg-yellow-100 border-yellow-400 text-yellow-700');
+                return;
+            }
+            
+            if (!extractionSettings.underlined && !extractionSettings.bolded && !extractionSettings.highlighted) {
+                showMessage('Please enable at least one format type in settings.', 'bg-yellow-100 border-yellow-400 text-yellow-700');
+                return;
+            }
+            
+            const placeholder = richTextDiv.querySelector('.initial-placeholder');
+            if (placeholder) placeholder.remove();
+
+            const originalInputHtml = richTextDiv.innerHTML;
+            const originalInputText = richTextDiv.textContent || "";
+
+            addHistoryEntry(originalInputHtml, originalInputText);
+
+            const container = document.createElement('div');
+            container.innerHTML = originalInputHtml;
+            
+            const extractedHtmlChunks = [];
+
+            container.childNodes.forEach(child => collectFormattedContent(child, extractedHtmlChunks));
+            
+            const newHtml = extractedHtmlChunks.join(' ');
+            
+            richTextDiv.innerHTML = newHtml;
+
+            const extractedText = richTextDiv.textContent.trim();
+            
+            if (!extractedText) {
+                showMessage('All content was unformatted and has been removed.', 'bg-yellow-100 border-yellow-400 text-yellow-700');
+            } else {
+                showMessage('Extraction complete. Original input saved to history!', 'bg-green-100 border-green-400 text-green-700');
+            }
+            
+            updateTimingSidebar();
+        }
+
+        function showMessage(message, classes) {
+            const messageBox = document.getElementById('message-box');
+            messageBox.textContent = message;
+            messageBox.className = `p-3 mb-4 rounded-lg border text-sm transition-all duration-300 ${classes}`;
+            messageBox.style.opacity = '1';
+
+            setTimeout(() => {
+                messageBox.style.opacity = '0';
+                setTimeout(() => {
+                    messageBox.className = 'opacity-0 h-0 p-0 mb-0';
+                }, 300);
+            }, 3000);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const richTextDiv = document.getElementById('rich-text-area');
+
+            loadSettings();
+            renderHistoryDropdown();
+            updateTimingSidebar();
+
+            richTextDiv.addEventListener('focus', (event) => {
+                const placeholder = richTextDiv.querySelector('.initial-placeholder');
+                if (placeholder) {
+                    richTextDiv.innerHTML = '';
+                }
+            }, { once: true }); 
+
+            richTextDiv.addEventListener('paste', (event) => {
+                const placeholder = richTextDiv.querySelector('.initial-placeholder');
+                if (placeholder) {
+                    placeholder.remove();
+                }
+
+                if (event.shiftKey) {
+                    return; 
+                }
+
+                let html = event.clipboardData.getData('text/html');
+
+                if (html) {
+                    event.preventDefault();
+                    
+                    // Remove underline formatting if setting is enabled
+                    if (extractionSettings.removeUnderlineOnPaste) {
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = html;
+                        
+                        // Remove <u> tags but keep content
+                        tempDiv.querySelectorAll('u').forEach(u => {
+                            const span = document.createElement('span');
+                            span.innerHTML = u.innerHTML;
+                            u.replaceWith(span);
+                        });
+                        
+                        // Remove underline from inline styles
+                        tempDiv.querySelectorAll('*').forEach(el => {
+                            if (el.style.textDecoration) {
+                                el.style.textDecoration = el.style.textDecoration.replace(/underline/gi, '').trim() || '';
+                            }
+                            if (el.style.textDecorationLine) {
+                                el.style.textDecorationLine = el.style.textDecorationLine.replace(/underline/gi, '').trim() || '';
+                            }
+                        });
+                        
+                        html = tempDiv.innerHTML;
+                    }
+                    
+                    document.execCommand('insertHTML', false, html);
+                }
+
+                setTimeout(() => {
+                    const buttonContainer = document.getElementById('extraction-button-container');
+                    if (buttonContainer) {
+                        buttonContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                    updateTimingSidebar();
+                }, 100);
+            });
+            
+            // Listen for content changes
+            richTextDiv.addEventListener('input', () => {
+                updateTimingSidebar();
+            });
+        });
+    </script>
+</head>
+<body class="bg-gray-50 font-sans p-4 sm:p-8 min-h-screen">
+
+    <div class="max-w-4xl mx-auto">
+        <header class="text-center mb-8 relative">
+            <button 
+                onclick="openSettings()"
+                class="absolute right-0 top-0 p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded-lg transition"
+                title="Settings"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+            </button>
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">Formatted Text Extractor with History</h1>
+            <p class="text-gray-500">Paste your rich content below. Click the settings icon to choose which formats to extract.</p>
+            <p class="text-gray-400 text-sm mt-1">Works with Google Docs, Microsoft Word, and more.</p>
+        </header>
+
+        <div id="message-box" class="opacity-0 h-0 p-0 mb-0 transition-all duration-300"></div>
+
+        <div 
+            id="rich-text-area" 
+            contenteditable="true" 
+            class="bg-white rounded-xl shadow-lg focus:ring-4 focus:ring-blue-300 transition-all"
+        >
+            <p class="initial-placeholder text-gray-400">Example: This sentence is plain. <strong>Keep this bold text.</strong> Remove this. <u>And keep this underlined part.</u></p>
+        </div>
+
+        <div id="extraction-button-container" class="mt-6 flex flex-col sm:flex-row justify-center space-y-3 sm:space-y-0 sm:space-x-3">
+            <button 
+                onclick="extractOnlyFormattedText()" 
+                id="extraction-button"
+                class="flex items-center justify-center space-x-2 px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-300 ease-in-out transform hover:scale-[1.02] focus:outline-none focus:ring-4 focus:ring-indigo-300"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-7-9a1 1 0 000 2h3a1 1 0 000-2H3zM8 8a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1zm5 1a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd" />
+                </svg>
+                <span>Extract ONLY Formatted Text (Preserve Styles)</span>
+            </button>
+
+             <button 
+                onclick="clearTextbox()" 
+                id="clear-button"
+                class="flex items-center justify-center space-x-2 px-6 py-3 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-gray-300"
+            >
+                <span>Clear</span>
+            </button>
+        </div>
+
+        <!-- Timing Sidebar (becomes inline on smaller screens) -->
+        <div id="timing-sidebar">
+            <h3 class="text-sm font-semibold text-gray-700 mb-2">Speaking Time</h3>
+            <p class="text-xs text-gray-500 mb-3">
+                Words: <span id="sidebar-word-count" class="font-medium text-gray-700">0</span>
+            </p>
+            <div id="sidebar-timing-results">
+                <p class="text-gray-400 text-xs text-center">No content yet</p>
+            </div>
+        </div>
+
+        <div id="history-container" class="mt-10 pt-6 border-t border-gray-200 hidden">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4 text-center">History of Past Inputs</h2>
+            
+            <div class="flex flex-col sm:flex-row justify-center items-center space-y-3 sm:space-y-0 sm:space-x-3 mb-4">
+                <select id="history-dropdown" class="w-full sm:w-80 bg-white border border-gray-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring-blue-500"></select>
+                
+                <button 
+                    onclick="loadSelectedInput()" 
+                    class="w-full sm:w-auto px-4 py-2 bg-blue-500 text-white font-medium rounded-lg shadow hover:bg-blue-600 transition"
+                >
+                    Load Input
+                </button>
+            </div>
+
+            <div class="flex flex-col sm:flex-row justify-center items-center space-y-3 sm:space-y-0 sm:space-x-3">
+                <input 
+                    type="text" 
+                    id="rename-input" 
+                    placeholder="New name for selected input..." 
+                    class="w-full sm:w-80 px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                />
+                <button 
+                    onclick="renameSelectedInput()" 
+                    class="w-full sm:w-auto px-4 py-2 bg-green-500 text-white font-medium rounded-lg shadow hover:bg-green-600 transition"
+                >
+                    Rename
+                </button>
+                <button 
+                    onclick="clearHistory()" 
+                    class="w-full sm:w-auto px-4 py-2 bg-red-500 text-white font-medium rounded-lg shadow hover:bg-red-600 transition"
+                >
+                    Clear All History
+                </button>
+            </div>
+        </div>
+
+        <p class="text-center text-gray-400 text-sm mt-8">Tip: Use <kbd class="px-2 py-1 bg-gray-200 rounded text-xs">Shift + Paste</kbd> to paste as plain text.</p>
+    </div>
+
+    <!-- Confirmation Overlay -->
+    <div id="confirmation-overlay">
+        <div id="confirmation-box">
+            <p id="confirmation-message" class="text-gray-700 mb-6"></p>
+            <div class="flex justify-center space-x-4">
+                <button onclick="hideConfirmation()" class="px-4 py-2 bg-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-400 transition">Cancel</button>
+                <button onclick="handleConfirm()" class="px-4 py-2 bg-red-500 text-white font-medium rounded-lg hover:bg-red-600 transition">Confirm</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Settings Overlay -->
+    <div id="settings-overlay">
+        <div id="settings-box">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-semibold text-gray-800">Settings</h2>
+                <button onclick="closeSettings()" class="text-gray-500 hover:text-gray-700">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- Format Extraction Settings -->
+            <div class="mb-6">
+                <h3 class="text-sm font-medium text-gray-700 mb-3">Paste Options:</h3>
+                
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-gray-600">Remove underlines on paste</span>
+                        <div id="toggle-removeUnderlineOnPaste" class="toggle-switch" onclick="toggleSetting('removeUnderlineOnPaste')"></div>
+                    </div>
+                </div>
+                <p class="text-xs text-gray-400 mt-2">Strips underline formatting while keeping bold and highlight.</p>
+            </div>
+            
+            <div class="mb-6">
+                <h3 class="text-sm font-medium text-gray-700 mb-3">Extract These Formats:</h3>
+                
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-gray-600"><u>Underlined</u></span>
+                        <div id="toggle-underlined" class="toggle-switch active" onclick="toggleSetting('underlined')"></div>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-gray-600"><strong>Bolded</strong></span>
+                        <div id="toggle-bolded" class="toggle-switch active" onclick="toggleSetting('bolded')"></div>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-gray-600"><mark>Highlighted</mark></span>
+                        <div id="toggle-highlighted" class="toggle-switch" onclick="toggleSetting('highlighted')"></div>
+                    </div>
+                </div>
+                <p class="text-xs text-gray-400 mt-3">Note: Bold-only mode excludes bold+underlined text. Highlight/Underline modes include all text with that formatting.</p>
+            </div>
+            
+            <!-- Speaker Speed Settings -->
+            <div>
+                <h3 class="text-sm font-medium text-gray-700 mb-3">Speaker Speeds:</h3>
+                <div id="speakers-list" class="max-h-48 overflow-y-auto mb-3">
+                </div>
+                <button 
+                    onclick="addSpeaker()"
+                    class="w-full px-4 py-2 bg-indigo-100 text-indigo-700 font-medium rounded-lg hover:bg-indigo-200 transition flex items-center justify-center space-x-2"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
+                    </svg>
+                    <span>Add Speaker</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
