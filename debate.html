@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>DocBase Speech Builder</title>
+    <style>
+        body { margin: 0; padding: 24px; font-family: "Segoe UI", sans-serif; background: #f8f9fa; color: #202124; }
+        header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        h1 { font-size: 22px; margin: 0; }
+        .summary { font-size: 13px; color: #5f6368; }
+        .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; color: #444; }
+        .stats span { font-weight: 600; }
+        .cards { display: flex; flex-direction: column; gap: 16px; margin-top: 20px; }
+        .card { background: white; border: 1px solid #dadce0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+        .card-label { font-size: 14px; font-weight: 600; color: #1a73e8; margin-bottom: 8px; }
+        .card-text { font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+        .empty { padding: 24px; background: white; border: 1px dashed #dadce0; border-radius: 8px; color: #5f6368; text-align: center; }
+    </style>
+</head>
+<body>
+    <header>
+        <div>
+            <h1>Speech Builder</h1>
+            <div class="summary">Auto-generated from DocBase highlights.</div>
+            <div class="stats" id="speech-summary"></div>
+        </div>
+    </header>
+
+    <main>
+        <div id="card-container" class="cards"></div>
+        <div id="empty-state" class="empty" style="display:none;">No cards yet. Add highlights in DocBase to see them here.</div>
+    </main>
+
+    <script>
+        const SPEECH_CARDS_KEY = 'docbaseSpeechCards';
+        const SPEECH_SETTINGS_KEY = 'docbaseSpeechSettings';
+
+        function formatTime(minutes) {
+            const totalSeconds = Math.round(minutes * 60);
+            const mins = Math.floor(totalSeconds / 60);
+            const secs = totalSeconds % 60;
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function renderCards(cards, settings) {
+            const container = document.getElementById('card-container');
+            const emptyState = document.getElementById('empty-state');
+            const summary = document.getElementById('speech-summary');
+
+            container.innerHTML = '';
+            if (!cards || cards.length === 0) {
+                emptyState.style.display = 'block';
+                summary.textContent = '';
+                return;
+            }
+            emptyState.style.display = 'none';
+
+            const totalWords = cards.reduce((sum, card) => sum + (card.wordCount || 0), 0);
+            const wpm = settings?.wpm || 160;
+            const minutes = totalWords / wpm;
+
+            summary.innerHTML = `Total cards: <span>${cards.length}</span> · Total words: <span>${totalWords}</span> · Est. time (@ ${wpm} wpm): <span>${formatTime(minutes)}</span>`;
+
+            cards.forEach((card) => {
+                const cardDiv = document.createElement('div');
+                cardDiv.className = 'card';
+
+                if (card.label) {
+                    const label = document.createElement('div');
+                    label.className = 'card-label';
+                    label.textContent = card.label;
+                    cardDiv.appendChild(label);
+                }
+
+                const text = document.createElement('div');
+                text.className = 'card-text';
+                text.innerHTML = escapeHtml(card.cleanedText || card.rawText || '').replace(/\n/g, '<br>');
+                cardDiv.appendChild(text);
+
+                container.appendChild(cardDiv);
+            });
+        }
+
+        function loadData() {
+            chrome.storage.local.get([SPEECH_CARDS_KEY, SPEECH_SETTINGS_KEY], (result) => {
+                const cards = result[SPEECH_CARDS_KEY] || [];
+                const settings = result[SPEECH_SETTINGS_KEY] || { wpm: 160 };
+                renderCards(cards, settings);
+            });
+        }
+
+        chrome.storage.onChanged.addListener((changes) => {
+            if (changes[SPEECH_CARDS_KEY] || changes[SPEECH_SETTINGS_KEY]) {
+                loadData();
+            }
+        });
+
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'docbase-refresh-speech') {
+                loadData();
+            }
+        });
+
+        loadData();
+    </script>
+</body>
+</html>
