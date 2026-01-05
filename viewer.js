@@ -25,11 +25,33 @@ const searchResultsPanel = document.getElementById('search-results-panel');
 const searchResultsList = document.getElementById('search-results-list');
 const closeSearchPanel = document.getElementById('close-search-panel');
 
+// Speech builder elements
+const speechBuilderBtn = document.getElementById('speech-builder-btn');
+const speechPanel = document.getElementById('speech-panel');
+const closeSpeechPanel = document.getElementById('close-speech-panel');
+const addCardBtn = document.getElementById('add-card-btn');
+const clearCardsBtn = document.getElementById('clear-cards-btn');
+const cardLabelInput = document.getElementById('card-label-input');
+const speechMessage = document.getElementById('speech-message');
+const speechCardList = document.getElementById('speech-card-list');
+const speechCardCount = document.getElementById('speech-card-count');
+const speechWordCount = document.getElementById('speech-word-count');
+const speechTime = document.getElementById('speech-time');
+const speechWpmInput = document.getElementById('speech-wpm');
+const speechPreviewFrame = document.getElementById('speech-preview-frame');
+const openPreviewTabBtn = document.getElementById('open-preview-tab');
+
 let internalSearchResults = [];
 let internalSearchIndex = 0;
 
+const SPEECH_CARDS_KEY = 'docbaseSpeechCards';
+const SPEECH_SETTINGS_KEY = 'docbaseSpeechSettings';
+const hasChromeStorage = () => typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
+const hasChromeTabs = () => typeof chrome !== 'undefined' && chrome.tabs;
+
 initResizer();
 initSearch();
+initSpeechBuilder();
 
 if (!docId) {
     statusEl.textContent = "Error: No document ID provided.";
