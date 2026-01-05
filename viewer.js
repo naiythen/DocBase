@@ -1,6 +1,7 @@
 const DB_NAME = "DocxSearchDB";
 const STORE_NAME = "documents";
 const DB_VERSION = 7; 
+const CARD_BUILDER_KEY = "docbaseCardBuilderState";
 
 const params = new URLSearchParams(window.location.search);
 const docId = parseInt(params.get('id'));
@@ -16,6 +17,25 @@ const sidebar = document.getElementById('outline-sidebar');
 const sidebarContent = document.getElementById('outline-content');
 const resizer = document.getElementById('resizer');
 
+// Card Extractor Elements
+const cardExtractorPanel = document.getElementById('card-extractor-panel');
+const toggleCardExtractorBtn = document.getElementById('toggle-card-extractor');
+const closeCardExtractorBtn = document.getElementById('close-card-extractor');
+const addSelectionBtn = document.getElementById('add-selection-btn');
+const extractFormattedBtn = document.getElementById('extract-formatted-btn');
+const copyCardsBtn = document.getElementById('copy-cards-btn');
+const clearCardsBtn = document.getElementById('clear-cards-btn');
+const cardExtractorArea = document.getElementById('card-extractor-area');
+const cardMessage = document.getElementById('card-message');
+const filterUnderlined = document.getElementById('filter-underlined');
+const filterBolded = document.getElementById('filter-bolded');
+const filterHighlighted = document.getElementById('filter-highlighted');
+const stripUnderline = document.getElementById('strip-underline');
+const speechWordCount = document.getElementById('speech-word-count');
+const speechTimings = document.getElementById('speech-timings');
+const speakerList = document.getElementById('speaker-list');
+const addSpeakerBtn = document.getElementById('add-speaker-btn');
+
 // Search elements
 const viewerSearchInput = document.getElementById('viewer-search-input');
 const viewerSearchCount = document.getElementById('viewer-search-count');
@@ -28,8 +48,22 @@ const closeSearchPanel = document.getElementById('close-search-panel');
 let internalSearchResults = [];
 let internalSearchIndex = 0;
 
+let cardBuilderState = {
+    html: "",
+    settings: {
+        underlined: true,
+        bolded: true,
+        highlighted: false,
+        stripUnderline: false
+    },
+    speakers: [
+        { id: 1, name: "Speaker 1", wpm: 150 }
+    ]
+};
+
 initResizer();
 initSearch();
+initCardExtractor();
 
 if (!docId) {
     statusEl.textContent = "Error: No document ID provided.";
@@ -470,4 +504,401 @@ function navigateResult(direction) {
     if (internalSearchResults.length === 0) return;
     internalSearchIndex = (internalSearchIndex + direction + internalSearchResults.length) % internalSearchResults.length;
     highlightAndScrollToResult(internalSearchIndex);
+}
+
+// ==================== CARD EXTRACTOR ====================
+
+function initCardExtractor() {
+    loadCardBuilderState();
+    bindCardExtractorEvents();
+    renderCardBuilderState();
+    updateSpeechSummary();
+}
+
+function bindCardExtractorEvents() {
+    if (toggleCardExtractorBtn) {
+        toggleCardExtractorBtn.addEventListener('click', () => {
+            cardExtractorPanel.classList.add('active');
+        });
+    }
+    if (closeCardExtractorBtn) {
+        closeCardExtractorBtn.addEventListener('click', () => {
+            cardExtractorPanel.classList.remove('active');
+        });
+    }
+
+    if (addSelectionBtn) addSelectionBtn.addEventListener('click', addSelectionToCards);
+    if (extractFormattedBtn) extractFormattedBtn.addEventListener('click', extractOnlyFormattedText);
+    if (copyCardsBtn) copyCardsBtn.addEventListener('click', copyExtractedCards);
+    if (clearCardsBtn) clearCardsBtn.addEventListener('click', clearCardExtractor);
+
+    if (cardExtractorArea) {
+        cardExtractorArea.addEventListener('input', () => {
+            cardBuilderState.html = cardExtractorArea.innerHTML;
+            saveCardBuilderState();
+            updateSpeechSummary();
+        });
+    }
+
+    [filterUnderlined, filterBolded, filterHighlighted, stripUnderline].forEach((checkbox) => {
+        if (!checkbox) return;
+        checkbox.addEventListener('change', () => {
+            cardBuilderState.settings = {
+                underlined: filterUnderlined.checked,
+                bolded: filterBolded.checked,
+                highlighted: filterHighlighted.checked,
+                stripUnderline: stripUnderline.checked
+            };
+            saveCardBuilderState();
+        });
+    });
+
+    if (addSpeakerBtn) {
+        addSpeakerBtn.addEventListener('click', addSpeaker);
+    }
+}
+
+function loadCardBuilderState() {
+    try {
+        const stored = localStorage.getItem(CARD_BUILDER_KEY);
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            cardBuilderState = {
+                ...cardBuilderState,
+                ...parsed,
+                settings: { ...cardBuilderState.settings, ...parsed.settings },
+                speakers: parsed.speakers && parsed.speakers.length > 0 ? parsed.speakers : cardBuilderState.speakers
+            };
+        }
+    } catch (error) {
+        console.error("Failed to load card builder state:", error);
+    }
+}
+
+function saveCardBuilderState() {
+    try {
+        localStorage.setItem(CARD_BUILDER_KEY, JSON.stringify(cardBuilderState));
+    } catch (error) {
+        console.error("Failed to save card builder state:", error);
+    }
+}
+
+function renderCardBuilderState() {
+    if (!cardExtractorArea) return;
+    cardExtractorArea.innerHTML = cardBuilderState.html || "";
+    filterUnderlined.checked = cardBuilderState.settings.underlined;
+    filterBolded.checked = cardBuilderState.settings.bolded;
+    filterHighlighted.checked = cardBuilderState.settings.highlighted;
+    stripUnderline.checked = cardBuilderState.settings.stripUnderline;
+    renderSpeakers();
+}
+
+function showCardMessage(message, type) {
+    if (!cardMessage) return;
+    cardMessage.textContent = message;
+    cardMessage.className = '';
+    cardMessage.classList.add(type);
+    cardMessage.style.display = 'block';
+    clearTimeout(cardMessage._timeoutId);
+    cardMessage._timeoutId = setTimeout(() => {
+        cardMessage.className = '';
+        cardMessage.style.display = 'none';
+    }, 3000);
+}
+
+function getSelectionHtml() {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return "";
+    const range = selection.getRangeAt(0);
+    if (!container.contains(range.commonAncestorContainer)) {
+        return "";
+    }
+    const wrapper = document.createElement('div');
+    wrapper.appendChild(range.cloneContents());
+    return wrapper.innerHTML.trim();
+}
+
+function removeUnderlineFromHtml(html) {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    tempDiv.querySelectorAll('u').forEach(u => {
+        const span = document.createElement('span');
+        span.innerHTML = u.innerHTML;
+        u.replaceWith(span);
+    });
+    tempDiv.querySelectorAll('*').forEach(el => {
+        if (el.style.textDecoration) {
+            el.style.textDecoration = el.style.textDecoration.replace(/underline/gi, '').trim() || '';
+        }
+        if (el.style.textDecorationLine) {
+            el.style.textDecorationLine = el.style.textDecorationLine.replace(/underline/gi, '').trim() || '';
+        }
+    });
+    return tempDiv.innerHTML;
+}
+
+function addSelectionToCards() {
+    if (!cardExtractorArea) return;
+    let html = getSelectionHtml();
+    if (!html) {
+        showCardMessage("Select text in the document first.", "warn");
+        return;
+    }
+    if (cardBuilderState.settings.stripUnderline) {
+        html = removeUnderlineFromHtml(html);
+    }
+    const block = document.createElement('div');
+    block.className = 'card-block';
+    block.innerHTML = html;
+    cardExtractorArea.appendChild(block);
+    cardBuilderState.html = cardExtractorArea.innerHTML;
+    saveCardBuilderState();
+    updateSpeechSummary();
+    showCardMessage("Selection added to card workspace.", "success");
+}
+
+function clearCardExtractor() {
+    if (!cardExtractorArea) return;
+    cardExtractorArea.innerHTML = "";
+    cardBuilderState.html = "";
+    saveCardBuilderState();
+    updateSpeechSummary();
+    showCardMessage("Card workspace cleared.", "info");
+}
+
+async function copyExtractedCards() {
+    if (!cardExtractorArea || !cardExtractorArea.textContent.trim()) {
+        showCardMessage("Nothing to copy yet.", "warn");
+        return;
+    }
+    const html = cardExtractorArea.innerHTML;
+    const text = cardExtractorArea.textContent;
+
+    try {
+        if (navigator.clipboard && window.ClipboardItem) {
+            const htmlBlob = new Blob([html], { type: "text/html" });
+            const textBlob = new Blob([text], { type: "text/plain" });
+            await navigator.clipboard.write([new ClipboardItem({ "text/html": htmlBlob, "text/plain": textBlob })]);
+        } else {
+            const range = document.createRange();
+            range.selectNodeContents(cardExtractorArea);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            document.execCommand('copy');
+            selection.removeAllRanges();
+        }
+        showCardMessage("Cards copied to clipboard.", "success");
+    } catch (error) {
+        showCardMessage("Copy failed. Please copy manually.", "warn");
+    }
+}
+
+function updateSpeechSummary() {
+    if (!speechWordCount || !speechTimings || !cardExtractorArea) return;
+    const text = cardExtractorArea.textContent.trim();
+    const wordCount = text ? text.split(/\s+/).filter(Boolean).length : 0;
+    speechWordCount.textContent = wordCount.toString();
+    speechTimings.innerHTML = "";
+
+    if (wordCount === 0) {
+        speechTimings.innerHTML = "<div class=\"time-row\"><span class=\"time-label\">No content yet</span></div>";
+        return;
+    }
+
+    cardBuilderState.speakers.forEach((speaker) => {
+        const minutes = wordCount / (speaker.wpm || 150);
+        const mins = Math.floor(minutes);
+        const secs = Math.round((minutes - mins) * 60);
+        const row = document.createElement('div');
+        row.className = 'time-row';
+        row.innerHTML = `
+            <span class="time-label">${speaker.name}</span>
+            <span>${mins}m ${secs}s</span>
+        `;
+        speechTimings.appendChild(row);
+    });
+}
+
+function renderSpeakers() {
+    if (!speakerList) return;
+    speakerList.innerHTML = "";
+    cardBuilderState.speakers.forEach((speaker) => {
+        const row = document.createElement('div');
+        row.className = 'speaker-row';
+        row.innerHTML = `
+            <input type="text" value="${speaker.name}" data-id="${speaker.id}" data-field="name" />
+            <input type="number" value="${speaker.wpm}" min="50" max="500" data-id="${speaker.id}" data-field="wpm" />
+            <button title="Remove speaker" data-id="${speaker.id}">✕</button>
+        `;
+        row.querySelectorAll('input').forEach((input) => {
+            input.addEventListener('input', handleSpeakerChange);
+        });
+        row.querySelector('button').addEventListener('click', () => removeSpeaker(speaker.id));
+        speakerList.appendChild(row);
+    });
+}
+
+function handleSpeakerChange(event) {
+    const input = event.target;
+    const id = parseInt(input.dataset.id, 10);
+    const field = input.dataset.field;
+    const speaker = cardBuilderState.speakers.find(s => s.id === id);
+    if (!speaker) return;
+    if (field === "name") {
+        speaker.name = input.value.trim() || `Speaker ${id}`;
+    }
+    if (field === "wpm") {
+        speaker.wpm = parseInt(input.value, 10) || 150;
+    }
+    saveCardBuilderState();
+    updateSpeechSummary();
+}
+
+function addSpeaker() {
+    const newId = cardBuilderState.speakers.length > 0
+        ? Math.max(...cardBuilderState.speakers.map(s => s.id)) + 1
+        : 1;
+    cardBuilderState.speakers.push({ id: newId, name: `Speaker ${newId}`, wpm: 150 });
+    saveCardBuilderState();
+    renderSpeakers();
+    updateSpeechSummary();
+}
+
+function removeSpeaker(id) {
+    if (cardBuilderState.speakers.length <= 1) {
+        showCardMessage("At least one speaker is required.", "warn");
+        return;
+    }
+    cardBuilderState.speakers = cardBuilderState.speakers.filter(s => s.id !== id);
+    saveCardBuilderState();
+    renderSpeakers();
+    updateSpeechSummary();
+}
+
+function isHighlightColor(color) {
+    if (!color || color === 'transparent' || color === '' || color === 'initial') {
+        return false;
+    }
+    if (color === 'rgba(0, 0, 0, 0)') return false;
+    if (color === 'rgb(255, 255, 255)' || color === 'rgba(255, 255, 255, 1)') return false;
+    const rgbMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (rgbMatch) {
+        const r = parseInt(rgbMatch[1], 10);
+        const g = parseInt(rgbMatch[2], 10);
+        const b = parseInt(rgbMatch[3], 10);
+        if (r > 240 && g > 240 && b > 240) return false;
+    }
+    return true;
+}
+
+function getElementFormatting(element) {
+    if (!element || element.nodeType !== 1) return { bold: false, underlined: false, highlighted: false };
+    const style = element.style;
+    const computedStyle = window.getComputedStyle(element);
+    const className = (element.className || '').toString().toLowerCase();
+
+    let isBold = false;
+    let isUnderlined = false;
+    let isHighlighted = false;
+
+    if (['B', 'STRONG'].includes(element.tagName)) isBold = true;
+    const fontWeight = style.fontWeight || '';
+    const computedFontWeight = computedStyle.fontWeight || '';
+    if (fontWeight === 'bold' || parseInt(fontWeight, 10) >= 700) isBold = true;
+    if (computedFontWeight === 'bold' || parseInt(computedFontWeight, 10) >= 700) isBold = true;
+    if (className.includes('bold')) isBold = true;
+
+    if (element.tagName === 'U') isUnderlined = true;
+    const textDecoration = style.textDecoration || style.textDecorationLine || '';
+    const computedTextDecoration = computedStyle.textDecoration || computedStyle.textDecorationLine || '';
+    if (textDecoration.includes('underline') || computedTextDecoration.includes('underline')) isUnderlined = true;
+    if (className.includes('underline') || className.includes('emphasis')) isUnderlined = true;
+
+    if (element.tagName === 'MARK') isHighlighted = true;
+    const bgColor = style.backgroundColor || '';
+    const computedBgColor = computedStyle.backgroundColor || '';
+    if (isHighlightColor(bgColor) || isHighlightColor(computedBgColor)) isHighlighted = true;
+    if (className.includes('highlight')) isHighlighted = true;
+
+    return { bold: isBold, underlined: isUnderlined, highlighted: isHighlighted };
+}
+
+function isFormattingElement(element) {
+    if (!element || element.nodeType !== 1) return false;
+    const blockTags = ['P', 'DIV', 'SECTION', 'ARTICLE', 'HEADER', 'FOOTER', 'NAV',
+        'ASIDE', 'MAIN', 'TABLE', 'TR', 'TD', 'TH', 'TBODY', 'THEAD',
+        'UL', 'OL', 'LI', 'DL', 'DT', 'DD', 'BLOCKQUOTE', 'PRE',
+        'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'BR', 'FIGURE', 'FIGCAPTION'];
+    if (blockTags.includes(element.tagName)) {
+        return false;
+    }
+
+    if (!cardBuilderState.settings.underlined && !cardBuilderState.settings.bolded && !cardBuilderState.settings.highlighted) {
+        return false;
+    }
+
+    const formatting = getElementFormatting(element);
+
+    if (cardBuilderState.settings.highlighted && formatting.highlighted) {
+        return true;
+    }
+
+    if (cardBuilderState.settings.underlined && formatting.underlined) {
+        return true;
+    }
+
+    if (cardBuilderState.settings.bolded && !cardBuilderState.settings.underlined) {
+        if (formatting.bold) {
+            return true;
+        }
+    }
+
+    if (cardBuilderState.settings.bolded && cardBuilderState.settings.underlined) {
+        if (formatting.bold) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function collectFormattedContent(node, extractedHtmlChunks) {
+    if (node.nodeType === 1) {
+        if (isFormattingElement(node)) {
+            const trimmedText = node.textContent.trim();
+            if (trimmedText.length > 0) {
+                extractedHtmlChunks.push(`<div class="card-block">${node.outerHTML}</div>`);
+                return;
+            }
+        }
+    }
+    if (node.hasChildNodes()) {
+        node.childNodes.forEach(child => collectFormattedContent(child, extractedHtmlChunks));
+    }
+}
+
+function extractOnlyFormattedText() {
+    if (!cardExtractorArea || !cardExtractorArea.textContent.trim()) {
+        showCardMessage("Add a selection before extracting.", "warn");
+        return;
+    }
+
+    if (!cardBuilderState.settings.underlined && !cardBuilderState.settings.bolded && !cardBuilderState.settings.highlighted) {
+        showCardMessage("Enable at least one format filter.", "warn");
+        return;
+    }
+
+    const extractedHtmlChunks = [];
+    cardExtractorArea.childNodes.forEach(child => collectFormattedContent(child, extractedHtmlChunks));
+    cardExtractorArea.innerHTML = extractedHtmlChunks.join(' ');
+    cardBuilderState.html = cardExtractorArea.innerHTML;
+    saveCardBuilderState();
+    updateSpeechSummary();
+
+    if (!cardExtractorArea.textContent.trim()) {
+        showCardMessage("All content was unformatted and removed.", "warn");
+    } else {
+        showCardMessage("Extraction complete.", "success");
+    }
 }

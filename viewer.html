@@ -21,6 +21,12 @@
         
         .actions button { cursor: pointer; background: #1a73e8; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-size: 14px; transition: background 0.2s; }
         .actions button:hover { background: #1557b0; }
+        .actions button.secondary {
+            background: #f1f3f4;
+            color: #202124;
+            border: 1px solid #dadce0;
+        }
+        .actions button.secondary:hover { background: #e8eaed; }
 
         /* --- Search Bar --- */
         .viewer-search-bar { display: flex; align-items: center; gap: 8px; background: #f1f3f4; padding: 6px 12px; border-radius: 24px; margin: 0 20px; }
@@ -116,6 +122,123 @@
         /* Search Highlight */
         .scrolled-highlight { background-color: #ffff00; outline: 3px solid #ffff00; }
 
+        /* --- Card Extractor Panel --- */
+        #card-extractor-panel {
+            position: fixed;
+            top: 50px;
+            right: 0;
+            width: 360px;
+            height: calc(100vh - 50px);
+            background: #ffffff;
+            border-left: 1px solid #dadce0;
+            z-index: 30;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: -2px 0 8px rgba(0, 0, 0, 0.08);
+        }
+        #card-extractor-panel.active { display: flex; }
+        .card-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-bottom: 1px solid #e0e0e0;
+            font-weight: 600;
+        }
+        .card-panel-body { padding: 14px 16px; overflow-y: auto; flex: 1; }
+        .card-panel-section { margin-bottom: 16px; }
+        .card-panel-section h3 {
+            margin: 0 0 8px;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #5f6368;
+            letter-spacing: 0.04em;
+        }
+        .card-panel-buttons { display: grid; gap: 8px; }
+        .card-panel-buttons button {
+            cursor: pointer;
+            background: #1a73e8;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .card-panel-buttons button.secondary {
+            background: #f1f3f4;
+            color: #202124;
+            border: 1px solid #dadce0;
+        }
+        .card-panel-buttons button:hover { background: #1557b0; }
+        .card-panel-buttons button.secondary:hover { background: #e8eaed; }
+        #card-message {
+            font-size: 12px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            border: 1px solid transparent;
+            display: none;
+        }
+        #card-message.success { display: block; background: #e6f4ea; color: #137333; border-color: #c7e6c7; }
+        #card-message.warn { display: block; background: #fef7e0; color: #b45309; border-color: #fde68a; }
+        #card-message.info { display: block; background: #e8f0fe; color: #1a73e8; border-color: #c6dafc; }
+        #card-extractor-area {
+            min-height: 240px;
+            border: 1px solid #dadce0;
+            border-radius: 8px;
+            padding: 12px;
+            line-height: 1.5;
+            background: #fff;
+            outline: none;
+        }
+        #card-extractor-area:focus {
+            border-color: #1a73e8;
+            box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+        }
+        .card-block { margin-bottom: 12px; }
+        .card-settings-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 12px;
+            color: #5f6368;
+            margin-bottom: 8px;
+        }
+        .card-settings-row input[type="checkbox"] { transform: scale(1.1); }
+        .speaker-row {
+            display: grid;
+            grid-template-columns: 1fr 80px auto;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+        .speaker-row input {
+            font-size: 12px;
+            padding: 6px 8px;
+            border: 1px solid #dadce0;
+            border-radius: 6px;
+        }
+        .speaker-row button {
+            border: none;
+            background: none;
+            cursor: pointer;
+            color: #d93025;
+            font-size: 14px;
+        }
+        #speech-summary {
+            font-size: 12px;
+            color: #5f6368;
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+        #speech-summary .time-row {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 6px;
+        }
+        #speech-summary .time-label { color: #202124; font-weight: 500; }
     </style>
 </head>
 <body>
@@ -129,6 +252,7 @@
         </div>
         <div class="actions">
             <button id="download-btn">Download Original</button>
+            <button id="toggle-card-extractor" class="secondary">Card Extractor</button>
         </div>
     </div>
 
@@ -150,6 +274,59 @@
 
         <div id="doc-container">
             <div id="status" style="margin-top:50px; color:#555;">Fetching document...</div>
+        </div>
+    </div>
+
+    <div id="card-extractor-panel">
+        <div class="card-panel-header">
+            <span>Card Extractor</span>
+            <button id="close-card-extractor" title="Close">×</button>
+        </div>
+        <div class="card-panel-body">
+            <div class="card-panel-section">
+                <h3>How it works</h3>
+                <div style="font-size:12px; color:#5f6368; line-height:1.5;">
+                    1) Highlight text in the document. 2) Click “Add Selection”. 3) Click “Extract Formatted Text” to keep only underlined/bold/highlighted card text.
+                </div>
+            </div>
+            <div class="card-panel-section card-panel-buttons">
+                <button id="add-selection-btn">Add Selection</button>
+                <button id="extract-formatted-btn">Extract Formatted Text</button>
+                <button id="copy-cards-btn" class="secondary">Copy Extracted Cards</button>
+                <button id="clear-cards-btn" class="secondary">Clear</button>
+            </div>
+            <div id="card-message"></div>
+            <div class="card-panel-section">
+                <h3>Card Workspace</h3>
+                <div id="card-extractor-area" contenteditable="true" spellcheck="false"></div>
+            </div>
+            <div class="card-panel-section">
+                <h3>Formatting Filters</h3>
+                <div class="card-settings-row">
+                    <label><input type="checkbox" id="filter-underlined" checked> Underlined</label>
+                </div>
+                <div class="card-settings-row">
+                    <label><input type="checkbox" id="filter-bolded" checked> Bolded</label>
+                </div>
+                <div class="card-settings-row">
+                    <label><input type="checkbox" id="filter-highlighted"> Highlighted</label>
+                </div>
+                <div class="card-settings-row">
+                    <label><input type="checkbox" id="strip-underline"> Remove underlines on add</label>
+                </div>
+            </div>
+            <div class="card-panel-section">
+                <h3>Speech Timing</h3>
+                <div id="speech-summary">
+                    <div>Words: <span id="speech-word-count">0</span></div>
+                    <div id="speech-timings"></div>
+                </div>
+            </div>
+            <div class="card-panel-section">
+                <h3>Speakers</h3>
+                <div id="speaker-list"></div>
+                <button id="add-speaker-btn" class="secondary" style="width:100%;">Add Speaker</button>
+            </div>
         </div>
     </div>
 
