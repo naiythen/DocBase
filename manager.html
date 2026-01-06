@@ -3,44 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <title>DocBase</title>
-    
+
     <script src="jszip.min.js"></script>
     <script src="docx-preview.min.js"></script>
     <script src="mammoth.browser.min.js"></script>
 
     <style>
         body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #fff; margin: 0; padding: 0; color: #202124; display: flex; flex-direction: column; min-height: 100vh; }
-        
-        /* Top Nav */
+
         .top-nav { display: flex; justify-content: space-between; padding: 15px 20px; }
         .nav-btn { background: #1a73e8; color: white; border: none; padding: 10px 20px; border-radius: 4px; font-weight: 500; cursor: pointer; font-size: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
         .nav-btn:hover { background: #1557b0; }
 
-        /* Main Container */
         .main-container { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: all 0.3s ease; padding-bottom: 50px; }
         body.has-results .main-container { justify-content: flex-start; padding-top: 20px; padding-bottom: 0; }
         body.has-results .logo { font-size: 24px; margin-bottom: 15px; }
         body.has-results .search-wrapper { max-width: 800px; }
-        
+
         .logo { font-size: 60px; font-weight: bold; color: #444; margin-bottom: 20px; letter-spacing: -2px; }
         .logo span { color: #4285f4; }
         .search-wrapper { width: 100%; max-width: 584px; display: flex; flex-direction: column; gap: 10px; }
-        
+
         input[type="text"] { width: 100%; padding: 14px 20px; font-size: 16px; border: 1px solid #dfe1e5; border-radius: 24px; outline: none; box-sizing: border-box; transition: box-shadow 0.2s; }
         input[type="text"]:focus { box-shadow: 0 1px 6px rgba(32,33,36,0.3); }
 
-        /* Filters */
         #db-filter-container { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 5px; }
         .filter-chip { padding: 6px 12px; border: 1px solid #dadce0; border-radius: 16px; font-size: 13px; cursor: pointer; color: #5f6368; background: white; user-select: none; transition: all 0.2s; }
         .filter-chip:hover { background: #f1f3f4; }
         .filter-chip.active { background: #e8f0fe; color: #1a73e8; border-color: #1a73e8; font-weight: 600; }
 
-        /* Results Layout with Sidebar */
         #results-wrapper { display: none; max-width: 1200px; margin: 0 auto; width: 100%; padding: 0 20px; box-sizing: border-box; position: relative; }
         body.has-results #results-wrapper { display: flex; }
         body.has-results #results-wrapper.full-width { max-width: none; }
-        
-        /* Multi-Search Sidebar */
+
         #multi-search-sidebar {
             width: 50%;
             min-width: 20%;
@@ -55,8 +50,7 @@
         #multi-search-sidebar.active { display: flex; flex-direction: column; }
         .sidebar-section-header { padding: 12px 16px; font-weight: 600; font-size: 12px; text-transform: uppercase; color: #5f6368; background: #f8f9fa; border-bottom: 1px solid #e0e0e0; position: sticky; top: 0; z-index: 5; flex-shrink: 0; }
         #multi-search-list { flex: 1; overflow-y: auto; padding: 20px; }
-        
-        /* Sidebar Resizer */
+
         #sidebar-resizer {
             width: 6px;
             background: transparent;
@@ -67,8 +61,7 @@
         }
         #sidebar-resizer.active { display: block; }
         #sidebar-resizer:hover { background: rgba(0,0,0,0.1); }
-        
-        /* Toggle Sidebar Button */
+
         .toggle-sidebar-btn {
             display: flex;
             align-items: center;
@@ -86,8 +79,7 @@
         .toggle-sidebar-btn:hover { background: #fde68a; }
         .toggle-sidebar-btn.active { background: #b45309; color: white; border-color: #b45309; }
         .toggle-sidebar-btn.active:hover { background: #92400e; }
-        
-        /* Results Area */
+
         #results-area { flex: 1; padding: 20px; display: block; overflow-y: auto; }
         .no-results { text-align: center; color: #5f6368; margin-top: 40px; font-size: 16px; }
         .result-item { margin-bottom: 30px; }
@@ -99,27 +91,22 @@
         .snippet { color: #4d5156; font-size: 14px; line-height: 1.58; }
         .search-match { font-weight: bold; color: #e91e63; } 
 
-        /* Inline Popout Button (appears on title hover) */
         .popout-btn-inline { opacity: 0; width: 28px; height: 28px; border-radius: 50%; background: white; border: 1px solid #dadce0; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,0.1); transition: opacity 0.15s ease, background-color 0.15s ease, transform 0.15s ease; flex-shrink: 0; }
         .popout-btn-inline:hover { background-color: #f1f3f4; transform: scale(1.1); opacity: 1; }
 
-        /* Overlay Popout Button (appears inside expanded viewer) */
         .popout-btn-overlay { position: absolute; top: 10px; right: 10px; z-index: 10; width: 36px; height: 36px; border-radius: 50%; background: white; border: 1px solid #dadce0; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); transition: background-color 0.15s ease, transform 0.15s ease; }
         .popout-btn-overlay:hover { background-color: #f1f3f4; transform: scale(1.1); }
         .popout-btn-overlay svg { width: 18px; height: 18px; fill: #5f6368; }
 
-        /* Snippet Popout Button (appears on snippet row hover) */
         .snippet-row:hover .snippet-popout-btn { opacity: 1; }
         .snippet-popout-btn { opacity: 0; width: 22px; height: 22px; border-radius: 50%; background: white; border: 1px solid #dadce0; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: opacity 0.15s ease, background-color 0.15s ease, transform 0.15s ease; flex-shrink: 0; }
         .snippet-popout-btn:hover { background-color: #e8f0fe; transform: scale(1.1); }
         .snippet-popout-btn svg { width: 11px; height: 11px; fill: #5f6368; }
         .popout-btn-inline svg { width: 14px; height: 14px; fill: #5f6368; }
 
-        /* Viewer */
         .viewer-wrapper { position: relative; margin-top: 15px; border: 1px solid #dadce0; border-radius: 8px; background: #fff; display: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); overflow: hidden; }
         .doc-viewer-container { height: 70vh; min-height: 600px; overflow-y: auto; background: #f8f9fa; position: relative; }
 
-        /* MANAGER MODAL */
         #manager-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; justify-content: center; align-items: center; }
         .modal-content { background: white; width: 900px; height: 80vh; border-radius: 8px; display: flex; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
         .modal-sidebar { width: 250px; background: #f8f9fa; border-right: 1px solid #dadce0; display: flex; flex-direction: column; }
@@ -144,18 +131,15 @@
         table { width: 100%; border-collapse: collapse; }
         th { text-align: left; padding: 10px; border-bottom: 2px solid #eee; color: #5f6368; font-size: 13px; }
         td { padding: 10px; border-bottom: 1px solid #eee; font-size: 14px; vertical-align: middle; }
-        
-        /* File Action Buttons */
+
         .btn-delete-file { color: #d93025; background: none; border: none; cursor: pointer; font-size: 16px; padding: 4px 8px; }
         .btn-delete-file:hover { background: #fce8e6; border-radius: 4px; }
         .btn-rename-file { color: #1a73e8; background: none; border: none; cursor: pointer; font-size: 16px; padding: 4px 8px; margin-right: 5px; }
         .btn-rename-file:hover { background: #e8f0fe; border-radius: 4px; }
 
-        /* TOAST */
         #toast-container { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #323232; color: white; padding: 12px 24px; border-radius: 4px; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 3000; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
         #toast-container.show { opacity: 1; }
 
-        /* DIALOG */
         #dialog-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 4000; justify-content: center; align-items: center; }
         .dialog-box { background: white; width: 400px; border-radius: 8px; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
         .dialog-title { font-weight: bold; font-size: 18px; margin-bottom: 10px; }
