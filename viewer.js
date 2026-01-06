@@ -16,7 +16,6 @@ const sidebar = document.getElementById('outline-sidebar');
 const sidebarContent = document.getElementById('outline-content');
 const resizer = document.getElementById('resizer');
 
-// Search elements
 const viewerSearchInput = document.getElementById('viewer-search-input');
 const viewerSearchCount = document.getElementById('viewer-search-count');
 const viewerSearchPrev = document.getElementById('viewer-search-prev');
@@ -53,7 +52,8 @@ function initDBAndRender() {
                 const doc = getRequest.result;
                 if (doc) {
                     renderDoc(doc);
-                    setupDownload(doc); // Setup the download button
+                    setupDownload(doc); 
+
                 } else {
                     statusEl.textContent = "Error: Document not found.";
                 }
@@ -70,7 +70,8 @@ function setupDownload(doc) {
             const url = URL.createObjectURL(doc.blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = doc.title; // Uses original filename
+            a.download = doc.title; 
+
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -83,15 +84,14 @@ async function renderDoc(doc) {
     titleEl.textContent = doc.title;
     document.title = doc.title + " - DocViewer";
     statusEl.textContent = "Rendering...";
-    
+
     try {
         const buffer = await doc.blob.arrayBuffer();
         container.innerHTML = ""; 
         await docx.renderAsync(buffer, container, null, { inWrapper: false, ignoreWidth: false, experimental: true });
-        
-        // Collapse blank pages (pages with only headers/minimal content)
+
         collapseBlankPages(container);
-        
+
         generateOutline(container);
 
         if (targetHeader) {
@@ -106,30 +106,26 @@ async function renderDoc(doc) {
     }
 }
 
-// Collapse pages that are mostly blank (only contain headers with minimal body text)
 function collapseBlankPages(container) {
     const pages = container.querySelectorAll('section.docx');
-    
+
     pages.forEach(page => {
-        // Get all text content
+
         const allText = page.textContent.trim();
-        
-        // Get only body text (exclude headers)
+
         const headers = page.querySelectorAll('h1, h2, h3, h4, h5, h6');
         let headerText = '';
         headers.forEach(h => headerText += h.textContent.trim() + ' ');
-        
-        // Calculate body text by removing header text
+
         const bodyText = allText.replace(headerText.trim(), '').trim();
-        
-        // Check for paragraphs with actual content (not just whitespace)
+
         const paragraphs = page.querySelectorAll('p');
         let hasSubstantialContent = false;
         paragraphs.forEach(p => {
             const pText = p.textContent.trim();
-            // Consider it substantial if paragraph has more than 50 chars of non-header text
+
             if (pText.length > 50) {
-                // Check if this paragraph text is not part of a heading-style element
+
                 const style = window.getComputedStyle(p);
                 const isBold = style.fontWeight === '700' || style.fontWeight === 'bold';
                 const isLargeFont = parseFloat(style.fontSize) > 16;
@@ -138,15 +134,13 @@ function collapseBlankPages(container) {
                 }
             }
         });
-        
-        // If page has headers but very little body content, mark as blank
+
         if (headers.length > 0 && !hasSubstantialContent && bodyText.length < 100) {
             page.classList.add('blank-page');
         }
     });
 }
 
-// --- HELPER: SMART REGEX GENERATOR ---
 function getSmartRegex(query, flags = 'i') {
     const safeQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (query.length >= 5) {
@@ -188,7 +182,7 @@ function scrollToHeader(container, query, fullHeaderText) {
 
 function scrollToIndex(container, query, targetIndex) {
     if (!query) return;
-    
+
     const regex = getSmartRegex(query, 'gi');
 
     requestAnimationFrame(() => {
@@ -196,7 +190,7 @@ function scrollToIndex(container, query, targetIndex) {
             const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
             let node;
             let currentIndex = 0;
-            
+
             while (node = walker.nextNode()) {
                 const text = node.textContent;
                 let match;
@@ -274,11 +268,9 @@ function generateOutline(container) {
     });
 }
 
-// ==================== INTERNAL SEARCH FUNCTIONALITY ====================
-
 function initSearch() {
     let searchDebounce;
-    
+
     viewerSearchInput.addEventListener('input', () => {
         clearTimeout(searchDebounce);
         searchDebounce = setTimeout(() => {
@@ -308,8 +300,7 @@ function performInternalSearch(query) {
     internalSearchResults = [];
     internalSearchIndex = 0;
     searchResultsList.innerHTML = '';
-    
-    // Clear previous highlights
+
     container.querySelectorAll('.internal-search-highlight').forEach(el => {
         const parent = el.parentNode;
         if (parent) {
@@ -317,36 +308,33 @@ function performInternalSearch(query) {
             parent.normalize();
         }
     });
-    
+
     if (!query || !query.trim()) {
         viewerSearchCount.textContent = '';
         searchResultsPanel.classList.remove('active');
         return;
     }
-    
+
     const searchTerm = query.trim().toLowerCase();
     const allResults = [];
-    
+
     const headingRegex = /Heading\s*([1-6])/i;
     const titleRegex = /Title|Subtitle/i;
     const processedHeaders = new Set();
-    
-    // Walk through all text nodes in document order to maintain position
-    // Use getSmartRegex for word boundary matching on short words (< 5 chars)
+
     const regex = getSmartRegex(searchTerm, 'gi');
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
     let node;
-    
+
     while ((node = walker.nextNode())) {
         const text = node.textContent;
         const parentEl = node.parentElement;
         if (!parentEl) continue;
-        
-        // Check if this node is inside a header by walking up the tree
+
         let isInHeader = false;
         let headerEl = null;
         let checkEl = parentEl;
-        
+
         while (checkEl && checkEl !== container) {
             if (/^H[1-6]$/.test(checkEl.tagName)) {
                 isInHeader = true;
@@ -359,7 +347,7 @@ function performInternalSearch(query) {
                     break;
                 }
             }
-            // Check for bold paragraph headers
+
             if (checkEl.tagName === 'P') {
                 const style = window.getComputedStyle(checkEl);
                 const isBold = style.fontWeight === '700' || style.fontWeight === 'bold' || checkEl.querySelector('b, strong');
@@ -371,13 +359,13 @@ function performInternalSearch(query) {
             }
             checkEl = checkEl.parentElement;
         }
-        
+
         let match;
         regex.lastIndex = 0;
-        
+
         while ((match = regex.exec(text)) !== null) {
             if (isInHeader && headerEl) {
-                // Header result - only add once per unique header
+
                 const headerText = headerEl.textContent.trim();
                 if (!processedHeaders.has(headerText) && headerText.length <= 120) {
                     processedHeaders.add(headerText);
@@ -389,13 +377,13 @@ function performInternalSearch(query) {
                     });
                 }
             } else {
-                // Body result
+
                 const start = Math.max(0, match.index - 40);
                 const end = Math.min(text.length, match.index + match[0].length + 40);
                 let snippet = text.substring(start, end).trim();
                 if (start > 0) snippet = '...' + snippet;
                 if (end < text.length) snippet = snippet + '...';
-                
+
                 allResults.push({
                     type: 'body',
                     node: node,
@@ -407,13 +395,12 @@ function performInternalSearch(query) {
             }
         }
     }
-    
-    // Results are already in document order since we walked through the DOM in order
+
     internalSearchResults = allResults;
-    
+
     const totalCount = internalSearchResults.length;
     viewerSearchCount.textContent = totalCount > 0 ? `1 / ${totalCount}` : 'No results';
-    
+
     if (totalCount > 0) {
         searchResultsPanel.classList.add('active');
         renderSearchResults(searchTerm);
@@ -426,55 +413,54 @@ function performInternalSearch(query) {
 function renderSearchResults(searchTerm) {
     searchResultsList.innerHTML = '';
     const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-    
+
     internalSearchResults.forEach((result, index) => {
         const item = document.createElement('div');
         item.className = 'search-result-item' + (index === 0 ? ' active' : '');
         item.dataset.index = index;
-        
+
         const typeLabel = document.createElement('div');
         typeLabel.className = `search-result-type ${result.type}`;
         typeLabel.textContent = result.type === 'header' ? 'Header' : 'Body';
-        
+
         const textDiv = document.createElement('div');
         textDiv.className = 'search-result-text';
         textDiv.innerHTML = result.text.replace(regex, '<mark>$1</mark>');
-        
+
         item.appendChild(typeLabel);
         item.appendChild(textDiv);
-        
+
         item.addEventListener('click', () => {
             internalSearchIndex = index;
             highlightAndScrollToResult(index);
             updateActiveResultItem();
         });
-        
+
         searchResultsList.appendChild(item);
     });
 }
 
 function highlightAndScrollToResult(index) {
     if (internalSearchResults.length === 0) return;
-    
-    // Clear previous active highlights
+
     container.querySelectorAll('.internal-search-active').forEach(el => {
         el.classList.remove('internal-search-active');
         el.style.backgroundColor = '#ffff99';
     });
-    
+
     const result = internalSearchResults[index];
     if (!result) return;
-    
+
     viewerSearchCount.textContent = `${index + 1} / ${internalSearchResults.length}`;
-    
+
     if (result.type === 'header') {
-        // For headers, scroll to and highlight the entire header element
+
         result.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         result.element.style.backgroundColor = '#ffcc00';
         result.element.style.transition = 'background 0.3s';
         result.element.classList.add('internal-search-active');
     } else {
-        // For body results, highlight the specific match
+
         try {
             if (result.node && result.node.parentNode) {
                 const range = document.createRange();
@@ -494,7 +480,7 @@ function highlightAndScrollToResult(index) {
             }
         }
     }
-    
+
     updateActiveResultItem();
 }
 
@@ -502,8 +488,7 @@ function updateActiveResultItem() {
     searchResultsList.querySelectorAll('.search-result-item').forEach((item, i) => {
         item.classList.toggle('active', i === internalSearchIndex);
     });
-    
-    // Scroll the active item into view in the results panel
+
     const activeItem = searchResultsList.querySelector('.search-result-item.active');
     if (activeItem) {
         activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
