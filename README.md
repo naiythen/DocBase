@@ -1,20 +1,21 @@
 # DocBase - Offline Search Engine for Debate Evidence
 
-**DocBase** is a browser extension designed for Policy, LD, and PF debaters. It creates a private, offline search engine for your local `.docx` backfiles. 
+**DocBase** (packaged as **Docx Local Search Engine** in the browser) is a Chrome/Edge extension for Policy, LD, and PF debaters. It creates a private, offline search engine for your local `.docx` backfiles.
 
 Stop relying on slow Drive searches or spotty tournament Wi-Fi. Download entire camp files from [Open Evidence](https://opencaselist.com/openev), index them in your browser, and find the perfect card in milliseconds.
 
-![Extension Screenshot Placeholder](https://raw.githubusercontent.com/naiythen/DocBase/refs/heads/main/Screenshot%202025-12-05%20173557.png)
+![DocBase extension screenshot](Screenshot%202025-12-05%20173557.png)
 
 ## 🏆 Tournament Ready Features
 
 * **🚫 100% Offline & Private**: Works entirely without internet. Your prep stays on your machine in the browser's `IndexedDB`. No cloud uploads.
 * **⚡ Instant Card Search**:
     * **Smart Ranking**: Prioritizes **File Names** and **Taglines/Cites** (Headers) over card text.
-    * **Snippet Preview**: See the context around the match before opening the file.
+    * **Snippet Preview**: See the context around matches before opening the file.
+    * **Multi-Search Sidebar**: For multi-word queries, a separate sidebar highlights cross-matches where words split across title/header/body.
 * **📑 Native Docx Viewer**: View files with full formatting (highlighting, underlining, bolding) preserved.
-* **navigable Outline**: The viewer automatically generates a sidebar based on Headers (Taglines), allowing you to jump between blocks instantly.
-* **📂 Bulk Management**: Drag and drop 50+ Open Ev files at once. Manage your database easily.
+* **Navigable Outline**: The viewer generates a sidebar from Headers (Taglines) so you can jump between blocks.
+* **📂 Database Management**: Create multiple databases, bulk upload files, and rename or delete entries.
 
 ## 📖 How to Use for Debate
 
@@ -23,14 +24,14 @@ Go to [Open Evidence](https://opencaselist.com/openev) and download the `.docx` 
 
 ### 2. Index Your Prep
 1.  Click the **DocBase** extension icon.
-2.  Click **Manage Database**.
-3.  Drag and drop your downloaded files into the upload zone. The extension will parse the taglines and text instantly.
+2.  Click **Manage Databases**.
+3.  Drag and drop your downloaded files into the upload zone. The extension will parse headers and text instantly.
 
 ### 3. Search During Rounds
 1.  Type a query (e.g., *"hegemony collapse war"* or *"cap k link"*).
 2.  **Inline Preview**: Click a title to verify it's the right file.
-3.  **Popout View**: Click the **Popout Icon** (↗) to open the file in a new tab for reading speeches.
-4.  **Scroll Spy**: Use the left sidebar to jump specifically to the 1NC Shell or 2AC blocks.
+3.  **Popout View**: Click the **Popout Icon** (↗) to open the file in a new tab.
+4.  **Outline Sidebar**: Use the left sidebar to jump to specific blocks.
 
 ## ⚙️ Search Logic (The "Card" Algorithm)
 
@@ -41,6 +42,7 @@ The search engine is optimized for how debate evidence is formatted. It ranks re
 | **Document Title** | File Name (e.g., "Camp_Politics_DA.docx") | **100 (Highest)** |
 | **HTML Headers (H1-H6)** | **Taglines & Cites** | **50 (High)** |
 | **Body Text** | Card Text / Warrants | **10 (Standard)** |
+| **Cross-Match** (multi-word only) | Words split across title + headers/body | **90 or 55** |
 
 ## 📦 Installation
 
