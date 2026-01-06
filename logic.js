@@ -2,19 +2,32 @@
 const DB_NAME = "DocxSearchDB";
 const STORE_NAME = "documents";
 const COLLECTION_STORE = "collections";
-const DB_VERSION = 7; 
+const SEARCH_CACHE_STORE = "searchCache"; // Persistent search index
+const DB_VERSION = 8; // Bumped for new store
 let db;
 
 // --- Global State ---
 let allGroupedResults = [];
 let renderLimit = 50; 
 let currentActiveCollectionId = null; 
-let activeSearchFilters = []; 
+let activeSearchFilters = [];
+
+// --- Search Cache & Worker for Performance ---
+let documentCache = null;
+let documentCacheFull = null; // Full docs with blobs for rendering
+let cacheInvalidated = true;
+let searchWorker = null;
+let currentSearchId = 0;
 
 // --- DOM Elements ---
 const searchBox = document.getElementById('search-box');
 const resultsArea = document.getElementById('results-area');
 const dbFilterContainer = document.getElementById('db-filter-container');
+const multiSearchSidebar = document.getElementById('multi-search-sidebar');
+const multiSearchList = document.getElementById('multi-search-list');
+const sidebarResizer = document.getElementById('sidebar-resizer');
+const toggleMultiSidebar = document.getElementById('toggle-multi-sidebar');
+let multiSidebarVisible = false; // User preference for sidebar visibility
 
 // Manager Elements
 const managerModal = document.getElementById('manager-modal');
@@ -134,6 +147,10 @@ const initDB = () => {
             } else {
                 docStore = transaction.objectStore(STORE_NAME);
             }
+            // Add search cache store for persistent index
+            if (!db.objectStoreNames.contains(SEARCH_CACHE_STORE)) {
+                db.createObjectStore(SEARCH_CACHE_STORE, { keyPath: "key" });
+            }
             // Migration
             docStore.openCursor().onsuccess = (e) => {
                 const cursor = e.target.result;
@@ -149,7 +166,10 @@ const initDB = () => {
         };
         request.onsuccess = (event) => {
             db = event.target.result;
-            loadFilterChips(); 
+            loadFilterChips();
+            initSearchWorker(); // Initialize worker for fast search
+            // Preload cache after a small delay to ensure DB is fully ready
+            setTimeout(() => loadDocumentCache(), 100);
             resolve(db);
         };
         request.onerror = (event) => { console.error("DB Error:", event.target.error); reject("DB Error"); };
@@ -238,6 +258,7 @@ deleteDbBtn.addEventListener('click', () => {
                 }
             };
             tx.oncomplete = () => {
+                cacheInvalidated = true; // Invalidate cache on collection delete
                 currentActiveCollectionId = null;
                 activeDbView.style.display = "none";
                 noDbSelectedMsg.style.display = "block";
@@ -301,7 +322,10 @@ function renameFileInManager(id, oldTitle) {
             const data = e.target.result;
             data.title = newName;
             store.put(data);
-            tx.oncomplete = () => loadFileTable(currentActiveCollectionId);
+            tx.oncomplete = () => {
+                cacheInvalidated = true; // Invalidate cache on rename
+                loadFileTable(currentActiveCollectionId);
+            };
         };
     });
 }
@@ -312,6 +336,7 @@ function deleteFileInManager(id) {
             const tx = db.transaction([STORE_NAME], "readwrite");
             tx.objectStore(STORE_NAME).delete(id);
             tx.oncomplete = () => {
+                cacheInvalidated = true; // Invalidate cache on delete
                 loadFileTable(currentActiveCollectionId);
                 showToast("File deleted.");
             };
@@ -326,6 +351,7 @@ fileInput.addEventListener('change', async (e) => {
     for (let i = 0; i < files.length; i++) {
         await processFile(files[i], currentActiveCollectionId);
     }
+    cacheInvalidated = true; // Invalidate cache on upload
     uploadStatus.textContent = `Added ${files.length} files.`;
     showToast(`Added ${files.length} files.`);
     fileInput.value = "";
@@ -424,7 +450,8 @@ searchBox.addEventListener('input', (e) => {
         return;
     }
     clearTimeout(debounceTimeout);
-    debounceTimeout = setTimeout(() => { performSearch(query); }, 300);
+    // Reduced debounce for faster response - 50ms instead of 300ms
+    debounceTimeout = setTimeout(() => { performSearch(query); }, 50);
 });
 
 function getSmartRegex(query, flags = 'i') {
@@ -441,12 +468,20 @@ function matchesHeaderMultiWord(header, query) {
     return words.every(word => headerLower.includes(word.toLowerCase()));
 }
 
-// Get regex for highlighting multiple words in headers
+// Get regex for highlighting multiple words in headers - applies word boundary for short words
 function getMultiWordHighlightRegex(query, flags = 'gi') {
     const words = query.trim().split(/\s+/).filter(w => w.length > 0);
     if (words.length <= 1) return null;
-    const safeWords = words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    return new RegExp(`(${safeWords.join('|')})`, flags);
+    // Build regex patterns with word boundaries for short words
+    const patterns = words.map(w => {
+        const safeWord = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Use word boundary for short words to avoid matching inside other words
+        if (w.length < 5) {
+            return `\\b${safeWord}\\b`;
+        }
+        return safeWord;
+    });
+    return new RegExp(`(${patterns.join('|')})`, flags);
 }
 
 // Multi-search: Find documents where filename matches some query words AND content matches other words
@@ -554,112 +589,499 @@ function getCrossMatchSnippets(doc, contentWords, originalQuery) {
     return snippets;
 }
 
-function performSearch(query) {
-    if (!db) return;
+// Initialize Web Worker for search
+function initSearchWorker() {
+    if (searchWorker) return;
+    try {
+        searchWorker = new Worker('search-worker.js');
+        searchWorker.onmessage = (e) => {
+            const { type, results, query } = e.data;
+            if (type === 'results') {
+                allGroupedResults = results;
+                renderLimit = 50;
+                renderResultsList(query);
+            }
+        };
+        searchWorker.onerror = (err) => {
+            console.warn('Worker error, falling back to main thread:', err);
+            searchWorker = null;
+        };
+    } catch (err) {
+        console.warn('Worker not supported, using main thread search');
+        searchWorker = null;
+    }
+}
+
+// Compute a lightweight hash using just IDs and titles (no full doc load needed)
+function computeQuickHash(countAndIds) {
+    return String(countAndIds.count) + '_' + countAndIds.ids.join(',');
+}
+
+// Get just doc count and IDs - much faster than loading full docs
+function getDocCountAndIds() {
+    return new Promise((resolve) => {
+        const tx = db.transaction([STORE_NAME], "readonly");
+        const store = tx.objectStore(STORE_NAME);
+        const ids = [];
+        store.openCursor().onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+                ids.push(cursor.value.id);
+                cursor.continue();
+            } else {
+                resolve({ count: ids.length, ids: ids.sort((a,b) => a-b) });
+            }
+        };
+    });
+}
+
+// Save search index to IndexedDB for persistence across worker restarts
+function saveSearchIndexToDb(cache, hash) {
+    if (!db.objectStoreNames.contains(SEARCH_CACHE_STORE)) return;
+    const tx = db.transaction([SEARCH_CACHE_STORE], "readwrite");
+    tx.objectStore(SEARCH_CACHE_STORE).put({ key: "searchIndex", hash, cache });
+}
+
+// Load search index from IndexedDB
+function loadSearchIndexFromDb() {
+    return new Promise((resolve) => {
+        if (!db.objectStoreNames.contains(SEARCH_CACHE_STORE)) {
+            resolve(null);
+            return;
+        }
+        const tx = db.transaction([SEARCH_CACHE_STORE], "readonly");
+        const req = tx.objectStore(SEARCH_CACHE_STORE).get("searchIndex");
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+    });
+}
+
+// Cache loader - uses persisted index when docs haven't changed
+function loadDocumentCache() {
+    return new Promise(async (resolve) => {
+        // Fast path: already in memory
+        if (documentCache && !cacheInvalidated) {
+            resolve(documentCache);
+            return;
+        }
+        
+        // Get quick hash (just count + IDs, no full doc load)
+        const countAndIds = await getDocCountAndIds();
+        const currentHash = computeQuickHash(countAndIds);
+        
+        // Check if persisted cache is valid BEFORE loading full docs
+        const savedIndex = await loadSearchIndexFromDb();
+        if (savedIndex && savedIndex.hash === currentHash) {
+            // Cache is valid! Use it without loading full docs for search
+            documentCache = savedIndex.cache;
+            cacheInvalidated = false;
+            
+            // Update worker cache
+            if (searchWorker) {
+                searchWorker.postMessage({ type: 'setCache', data: { documents: documentCache } });
+            }
+            
+            // Also load full docs with blobs for rendering (async, don't block)
+            loadFullDocsAsync();
+            
+            resolve(documentCache);
+            return;
+        }
+        
+        // Cache invalid - need to load full docs and rebuild
+        const transaction = db.transaction([STORE_NAME], "readonly");
+        const objectStore = transaction.objectStore(STORE_NAME);
+        const request = objectStore.getAll();
+        
+        request.onsuccess = () => {
+            const docs = request.result;
+            
+            // Store full docs with blobs for rendering
+            documentCacheFull = {};
+            docs.forEach(doc => {
+                documentCacheFull[doc.id] = doc;
+            });
+            
+            // Build new search cache
+            documentCache = docs.map(doc => ({
+                id: doc.id,
+                title: doc.title,
+                titleLower: doc.title.toLowerCase(),
+                text: doc.text,
+                textLower: doc.text.toLowerCase(),
+                headers: doc.headers || [],
+                headersLower: (doc.headers || []).map(h => h.toLowerCase()),
+                date: doc.date,
+                collectionId: doc.collectionId
+            }));
+            cacheInvalidated = false;
+            
+            // Persist for future fast loads
+            saveSearchIndexToDb(documentCache, currentHash);
+            
+            // Update worker cache
+            if (searchWorker) {
+                searchWorker.postMessage({ type: 'setCache', data: { documents: documentCache } });
+            }
+            
+            resolve(documentCache);
+        };
+        
+        request.onerror = () => resolve([]);
+    });
+}
+
+// Load full docs with blobs asynchronously for rendering
+function loadFullDocsAsync() {
+    if (documentCacheFull && Object.keys(documentCacheFull).length > 0) return;
+    
     const transaction = db.transaction([STORE_NAME], "readonly");
     const objectStore = transaction.objectStore(STORE_NAME);
-    const request = objectStore.openCursor();
+    const request = objectStore.getAll();
     
-    allGroupedResults = []; 
-    const regex = getSmartRegex(query);
-    const globalRegex = getSmartRegex(query, 'gi');
+    request.onsuccess = () => {
+        const docs = request.result;
+        documentCacheFull = {};
+        docs.forEach(doc => {
+            documentCacheFull[doc.id] = doc;
+        });
+    };
+}
 
-    request.onsuccess = (event) => {
-        const cursor = event.target.result;
-        if (cursor) {
-            const doc = cursor.value;
-            if (activeSearchFilters.length > 0 && !activeSearchFilters.includes(doc.collectionId)) {
-                cursor.continue(); return;
+// Get full doc with blob for rendering
+function getFullDoc(docId) {
+    if (documentCacheFull && documentCacheFull[docId]) {
+        return documentCacheFull[docId];
+    }
+    return null;
+}
+
+// Main search function - uses Worker if available, fallback to main thread
+async function performSearch(query) {
+    if (!db) return;
+    
+    const docs = await loadDocumentCache();
+    
+    // Try to use worker for non-blocking search
+    if (searchWorker) {
+        currentSearchId++;
+        searchWorker.postMessage({ 
+            type: 'search', 
+            data: { query, filters: activeSearchFilters }
+        });
+        return;
+    }
+    
+    // Fallback: main thread search (optimized)
+    performSearchMainThread(query, docs);
+}
+
+// Optimized main-thread search (fallback if Worker unavailable)
+function performSearchMainThread(query, docs) {
+    allGroupedResults = [];
+    
+    const queryLower = query.toLowerCase();
+    const queryWords = query.trim().split(/\s+/).filter(w => w.length > 1);
+    const isShortQuery = query.length < 5;
+    
+    // Pre-compile regex once
+    let regex = null;
+    if (isShortQuery) {
+        regex = getSmartRegex(query);
+    }
+    
+    for (const doc of docs) {
+        // Skip if filtered
+        if (activeSearchFilters.length > 0 && !activeSearchFilters.includes(doc.collectionId)) {
+            continue;
+        }
+        
+        let titleHit = false;
+        let headerHits = [];
+        let bodyHits = [];
+        
+        // Title check
+        if (isShortQuery) {
+            titleHit = regex.test(doc.title);
+        } else {
+            titleHit = doc.titleLower.includes(queryLower);
+        }
+        
+        // Header check
+        for (let hi = 0; hi < doc.headers.length; hi++) {
+            const headerLower = doc.headersLower[hi];
+            let matches = false;
+            
+            if (isShortQuery) {
+                matches = regex.test(doc.headers[hi]);
+            } else {
+                matches = headerLower.includes(queryLower);
             }
-
-            let titleHit = false;
-            let headerHits = [];
-            let bodyHits = [];
-
-            if (regex.test(doc.title)) titleHit = true;
-            if (doc.headers) {
-                doc.headers.forEach(h => {
-                    // Check exact phrase match OR multi-word match (all words present anywhere in header)
-                    if (regex.test(h) || matchesHeaderMultiWord(h, query)) {
-                        headerHits.push({ type: 'header', text: h, index: -1 });
+            
+            // Multi-word match - apply word boundary for short words
+            if (!matches && queryWords.length > 1) {
+                matches = queryWords.every(w => {
+                    if (w.length < 5) {
+                        const safeWord = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const wordRegex = new RegExp(`\\b${safeWord}\\b`, 'i');
+                        return wordRegex.test(doc.headers[hi]);
                     }
+                    return headerLower.includes(w.toLowerCase());
                 });
             }
-
-            const fullText = doc.text;
+            
+            if (matches) {
+                headerHits.push({ type: 'header', text: doc.headers[hi], index: -1 });
+            }
+        }
+        
+        // Body search - for multi-word queries, check each word individually with proper boundary matching
+        const textLower = doc.textLower;
+        const fullText = doc.text;
+        let bodyHitCount = 0;
+        
+        if (isShortQuery) {
+            // Single short word - use word boundary regex
+            const globalRegex = getSmartRegex(query, 'gi');
             let match;
-            let occurrenceIndex = 0; 
-            while ((match = globalRegex.exec(fullText)) !== null) {
+            while ((match = globalRegex.exec(fullText)) !== null && bodyHitCount < 10) {
                 const start = Math.max(0, match.index - 40);
                 const end = Math.min(fullText.length, match.index + query.length + 40);
-                let snippet = fullText.substring(start, end);
+                const snippet = fullText.substring(start, end);
                 const isHeader = headerHits.some(h => h.text.includes(snippet.trim()));
-                if (!isHeader) bodyHits.push({ type: 'body', text: snippet, index: occurrenceIndex });
-                occurrenceIndex++;
+                if (!isHeader) {
+                    bodyHits.push({ type: 'body', text: snippet, index: bodyHitCount });
+                    bodyHitCount++;
+                }
             }
-
-            if (titleHit) allGroupedResults.push({ doc, groupType: 'title', score: 100, hits: [{ type: 'title', text: null, index: -1 }] });
-            if (headerHits.length > 0) allGroupedResults.push({ doc, groupType: 'header', score: 50, hits: headerHits });
-            if (bodyHits.length > 0) allGroupedResults.push({ doc, groupType: 'body', score: 10, hits: bodyHits });
-            
-            // Multi-search: Cross-match between filename and content - ALWAYS check
-            const crossMatch = findCrossMatches(doc, query);
+        } else if (queryWords.length > 1) {
+            // Multi-word query - need to find snippets containing all words with proper boundary matching
+            // Build a regex that finds any of the words (with boundaries for short ones)
+            const patterns = queryWords.map(w => {
+                const safe = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                return w.length < 5 ? `\\b${safe}\\b` : safe;
+            });
+            const anyWordRegex = new RegExp(`(${patterns.join('|')})`, 'gi');
+            let match;
+            while ((match = anyWordRegex.exec(fullText)) !== null && bodyHitCount < 10) {
+                const start = Math.max(0, match.index - 40);
+                const end = Math.min(fullText.length, match.index + match[0].length + 40);
+                const snippet = fullText.substring(start, end);
+                const isHeader = headerHits.some(h => h.text.includes(snippet.trim()));
+                if (!isHeader) {
+                    bodyHits.push({ type: 'body', text: snippet, index: bodyHitCount });
+                    bodyHitCount++;
+                }
+            }
+        } else {
+            // Single long word - simple indexOf
+            let searchIndex = 0;
+            while ((searchIndex = textLower.indexOf(queryLower, searchIndex)) !== -1 && bodyHitCount < 10) {
+                const start = Math.max(0, searchIndex - 40);
+                const end = Math.min(fullText.length, searchIndex + query.length + 40);
+                const snippet = fullText.substring(start, end);
+                const isHeader = headerHits.some(h => h.text.includes(snippet.trim()));
+                if (!isHeader) {
+                    bodyHits.push({ type: 'body', text: snippet, index: bodyHitCount });
+                    bodyHitCount++;
+                }
+                searchIndex += queryLower.length;
+            }
+        }
+        
+        // Add results
+        if (titleHit) {
+            allGroupedResults.push({ doc, groupType: 'title', score: 100, hits: [{ type: 'title', text: null, index: -1 }] });
+        }
+        if (headerHits.length > 0) {
+            allGroupedResults.push({ doc, groupType: 'header', score: 50, hits: headerHits });
+        }
+        if (bodyHits.length > 0) {
+            allGroupedResults.push({ doc, groupType: 'body', score: 10, hits: bodyHits });
+        }
+        
+        // Cross-match (only for multi-word)
+        if (queryWords.length >= 2) {
+            const crossMatch = findCrossMatchesFast(doc, queryWords);
             if (crossMatch) {
-                // Use contentOnlyWords if available, otherwise use all content words
-                const wordsToSearch = crossMatch.contentOnlyWords && crossMatch.contentOnlyWords.length > 0 
+                const wordsToSearch = crossMatch.contentOnlyWords.length > 0 
                     ? crossMatch.contentOnlyWords 
                     : crossMatch.contentWords;
-                let crossSnippets = getCrossMatchSnippets(doc, wordsToSearch, query);
-                // Sort: header results before body results
+                let crossSnippets = getCrossMatchSnippetsFast(doc, wordsToSearch);
                 crossSnippets.sort((a, b) => {
                     if (a.type === 'cross-header' && b.type === 'cross') return -1;
                     if (a.type === 'cross' && b.type === 'cross-header') return 1;
                     return 0;
                 });
                 if (crossSnippets.length > 0) {
-                    // Assign higher score if header matches exist, lower for body-only
                     const hasHeaderMatch = crossSnippets.some(s => s.type === 'cross-header');
-                    const crossScore = hasHeaderMatch ? 35 : 25;
-                    
                     allGroupedResults.push({ 
-                        doc,
-                        groupType: 'cross', 
-                        score: crossScore, 
-                        hits: crossSnippets,
-                        crossMatch: crossMatch
+                        doc, groupType: 'cross', score: hasHeaderMatch ? 35 : 25, 
+                        hits: crossSnippets, crossMatch: crossMatch
                     });
                 }
             }
-            
-            cursor.continue();
-        } else {
-            allGroupedResults.sort((a, b) => b.score - a.score);
-            renderLimit = 50; 
-            renderResultsList(query);
         }
-    };
+    }
+    
+    allGroupedResults.sort((a, b) => b.score - a.score);
+    renderLimit = 50;
+    renderResultsList(query);
+}
+
+// Fast cross-match using pre-computed lowercase values
+function findCrossMatchesFast(doc, words) {
+    const titleMatchedWords = [];
+    const contentMatchedWords = [];
+    const allContent = doc.textLower + ' ' + doc.headersLower.join(' ');
+    
+    for (const word of words) {
+        const wordLower = word.toLowerCase();
+        if (doc.titleLower.includes(wordLower)) {
+            titleMatchedWords.push(word);
+        }
+        if (allContent.includes(wordLower)) {
+            contentMatchedWords.push(word);
+        }
+    }
+    
+    if (titleMatchedWords.length > 0 && contentMatchedWords.length > 0) {
+        const titleSet = new Set(titleMatchedWords.map(w => w.toLowerCase()));
+        const contentOnlyWords = contentMatchedWords.filter(w => !titleSet.has(w.toLowerCase()));
+        return {
+            titleWords: titleMatchedWords,
+            contentWords: contentMatchedWords,
+            contentOnlyWords: contentOnlyWords,
+            allWords: [...new Set([...titleMatchedWords, ...contentMatchedWords])]
+        };
+    }
+    return null;
+}
+
+// Fast snippet extraction for cross-matches
+function getCrossMatchSnippetsFast(doc, contentWords) {
+    const snippets = [];
+    const usedWords = new Set();
+    
+    // Check headers for multi-word matches
+    if (contentWords.length > 1) {
+        for (let hi = 0; hi < doc.headers.length; hi++) {
+            const headerLower = doc.headersLower[hi];
+            const matchedPhrase = contentWords.filter(w => headerLower.includes(w.toLowerCase()));
+            if (matchedPhrase.length >= 2) {
+                snippets.push({ 
+                    type: 'cross-header', 
+                    text: doc.headers[hi], 
+                    word: matchedPhrase.join(' '),
+                    matchedText: matchedPhrase.join(' '),
+                    index: -1,
+                    isPhrase: true
+                });
+                matchedPhrase.forEach(w => usedWords.add(w.toLowerCase()));
+            }
+        }
+    }
+    
+    // Find individual words not matched in phrases
+    for (const word of contentWords) {
+        if (usedWords.has(word.toLowerCase())) continue;
+        
+        const wordLower = word.toLowerCase();
+        const idx = doc.textLower.indexOf(wordLower);
+        
+        if (idx !== -1) {
+            const start = Math.max(0, idx - 40);
+            const end = Math.min(doc.text.length, idx + word.length + 40);
+            snippets.push({ 
+                type: 'cross', 
+                text: doc.text.substring(start, end), 
+                word: word, 
+                matchedText: doc.text.substr(idx, word.length),
+                index: idx 
+            });
+        } else {
+            // Check headers
+            for (let hi = 0; hi < doc.headers.length; hi++) {
+                if (doc.headersLower[hi].includes(wordLower)) {
+                    snippets.push({ 
+                        type: 'cross-header', 
+                        text: doc.headers[hi], 
+                        word: word, 
+                        matchedText: word, 
+                        index: -1 
+                    });
+                    break;
+                }
+            }
+        }
+    }
+    
+    return snippets;
 }
 
 function renderResultsList(query) {
     resultsArea.innerHTML = "";
+    multiSearchList.innerHTML = "";
+    
     if (allGroupedResults.length === 0) {
         resultsArea.innerHTML = `<div class="no-results"><p>No documents found matching "<b>${query}</b>"</p></div>`;
+        multiSearchSidebar.classList.remove('active');
+        sidebarResizer.classList.remove('active');
         return;
     }
-    const visibleItems = allGroupedResults.slice(0, renderLimit);
-    visibleItems.forEach(group => renderDocumentGroup(group, query));
+    
+    // Separate multi-search results from regular results
+    const multiSearchResults = allGroupedResults.filter(g => g.groupType === 'cross');
+    const regularResults = allGroupedResults.filter(g => g.groupType !== 'cross');
+    
+    // Show/hide toggle button based on multi-search results
+    const resultsWrapper = document.getElementById('results-wrapper');
+    if (multiSearchResults.length > 0) {
+        toggleMultiSidebar.classList.add('has-results');
+        // Render multi-search results in sidebar using same renderDocumentGroup function
+        multiSearchResults.slice(0, renderLimit).forEach(group => renderDocumentGroup(group, query, multiSearchList));
+        
+        // Show sidebar based on user preference
+        if (multiSidebarVisible) {
+            multiSearchSidebar.classList.add('active');
+            sidebarResizer.classList.add('active');
+            toggleMultiSidebar.classList.add('active');
+            resultsWrapper.classList.add('full-width');
+        } else {
+            multiSearchSidebar.classList.remove('active');
+            sidebarResizer.classList.remove('active');
+            toggleMultiSidebar.classList.remove('active');
+            resultsWrapper.classList.remove('full-width');
+        }
+    } else {
+        toggleMultiSidebar.classList.remove('has-results');
+        multiSearchSidebar.classList.remove('active');
+        sidebarResizer.classList.remove('active');
+        toggleMultiSidebar.classList.remove('active');
+        resultsWrapper.classList.remove('full-width');
+    }
+    
+    // Render regular results in main area
+    const visibleItems = regularResults.slice(0, renderLimit);
+    visibleItems.forEach(group => renderDocumentGroup(group, query, resultsArea));
 
-    if (allGroupedResults.length > renderLimit) {
+    if (regularResults.length > renderLimit) {
         const loadBtn = document.createElement('button');
         loadBtn.textContent = "Load More Results";
         loadBtn.style.cssText = "display:block; margin: 20px auto; padding: 10px 20px; background: #f1f3f4; border: 1px solid #dadce0; cursor:pointer; border-radius:4px; font-weight:bold; color: #5f6368;";
         loadBtn.addEventListener('click', () => { renderLimit += 50; renderResultsList(query); });
         resultsArea.appendChild(loadBtn);
     }
+    
+    if (regularResults.length === 0 && multiSearchResults.length > 0) {
+        resultsArea.innerHTML = `<div class="no-results" style="margin-top:20px;"><p>Only multi-search results found. See sidebar.</p></div>`;
+    }
 }
 
-function renderDocumentGroup(group, query) {
-    const doc = group.doc;
+function renderDocumentGroup(group, query, targetContainer = resultsArea) {
+    // Get full doc with blob - worker returns lightweight doc without blob
+    const docId = group.doc.id;
+    const doc = getFullDoc(docId) || group.doc;
     const div = document.createElement('div');
     div.className = 'result-item';
     div.style.marginBottom = "30px"; 
@@ -702,7 +1124,9 @@ function renderDocumentGroup(group, query) {
     const popoutBtnOverlay = div.querySelector('.popout-btn-overlay');
 
     const snippetList = div.querySelector('.snippet-list');
-    const replaceRegex = getSmartRegex(query, 'gi');
+    // For multi-word queries, use word-boundary-aware highlighting regex
+    const multiWordRegex = getMultiWordHighlightRegex(query, 'gi');
+    const replaceRegex = multiWordRegex || getSmartRegex(query, 'gi');
 
     const allHits = group.hits;
     const visibleHits = allHits.slice(0, 5);
@@ -759,7 +1183,7 @@ function renderDocumentGroup(group, query) {
     popoutBtn.addEventListener('click', openPopout);
     popoutBtnOverlay.addEventListener('click', openPopout);
 
-    resultsArea.appendChild(div);
+    targetContainer.appendChild(div);
 }
 
 function createSnippetRow(hit, parent, replaceRegex, query, resultDiv, doc) {
@@ -781,13 +1205,20 @@ function createSnippetRow(hit, parent, replaceRegex, query, resultDiv, doc) {
         contentHtml = `...${hl}...`;
     } else if (hit.type === 'cross') {
         // Cross-match: highlight the specific word found in body content
-        const wordRegex = new RegExp(`(${hit.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-        const hl = hit.text.replace(wordRegex, '<span class="search-match" style="color:#e91e63">$1</span>');
+        // Use word boundary for short words to avoid highlighting within other words
+        const safeWord = hit.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const wordRegex = hit.word.length < 5
+            ? new RegExp(`(?:^|[\\s,.:;!?()\\[\\]{}"\\/\\-])(${safeWord})(?:$|[\\s,.:;!?()\\[\\]{}"\\/\\-])`, 'gi')
+            : new RegExp(`(${safeWord})`, 'gi');
+        const hl = hit.text.replace(wordRegex, (match, p1) => match.replace(p1, `<span class="search-match" style="color:#e91e63">${p1}</span>`));
         contentHtml = `<span style="background:#f1f3f4; color:#5f6368; font-size:10px; padding:1px 4px; border-radius:3px; margin-right:6px;">Body</span><strong style="color:#b45309">"${hit.word}":</strong> ...${hl}...`;
     } else if (hit.type === 'cross-header') {
-        // Cross-match found in header
-        const wordRegex = new RegExp(`(${hit.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-        const hl = hit.text.replace(wordRegex, '<span class="search-match" style="color:#e91e63">$1</span>');
+        // Cross-match found in header - use word boundary for short words
+        const safeWord = hit.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const wordRegex = hit.word.length < 5
+            ? new RegExp(`(?:^|[\\s,.:;!?()\\[\\]{}"\\/\\-])(${safeWord})(?:$|[\\s,.:;!?()\\[\\]{}"\\/\\-])`, 'gi')
+            : new RegExp(`(${safeWord})`, 'gi');
+        const hl = hit.text.replace(wordRegex, (match, p1) => match.replace(p1, `<span class="search-match" style="color:#e91e63">${p1}</span>`));
         contentHtml = `<span style="background:#e6f4ea; color:#137333; font-size:10px; padding:1px 4px; border-radius:3px; margin-right:6px;">Header</span><strong style="color:#b45309">"${hit.word}":</strong> ${hl}`;
     } else { contentHtml = `<em>Match in document title</em>`; }
 
@@ -819,6 +1250,16 @@ function createSnippetRow(hit, parent, replaceRegex, query, resultDiv, doc) {
         e.stopPropagation();
         const wrapper = resultDiv.querySelector('.viewer-wrapper');
         const container = resultDiv.querySelector('.doc-viewer-container');
+        // If no viewer wrapper (sidebar items), open in popout instead
+        if (!wrapper || !container) {
+            let viewerUrl = `viewer.html?id=${doc.id}&q=${encodeURIComponent(query)}`;
+            if (hit.type === 'header') viewerUrl += `&target=${encodeURIComponent(hit.text)}`;
+            else if (hit.type === 'body') viewerUrl += `&idx=${hit.index}`;
+            else if (hit.type === 'cross') viewerUrl += `&word=${encodeURIComponent(hit.word)}`;
+            else if (hit.type === 'cross-header') viewerUrl += `&target=${encodeURIComponent(hit.text)}`;
+            chrome.tabs.create({ url: viewerUrl });
+            return;
+        }
         wrapper.style.display = 'block';
         if (container.innerHTML === "") {
             container.textContent = "Rendering...";
@@ -928,6 +1369,55 @@ function scrollToWord(container, word) {
                 }
             }
         }, 100);
+    });
+}
+
+// --- Sidebar Resizer ---
+if (sidebarResizer && multiSearchSidebar) {
+    let isResizing = false;
+    
+    sidebarResizer.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+        const windowWidth = window.innerWidth;
+        // Calculate percentage from left edge of window
+        let percentage = (e.clientX / windowWidth) * 100;
+        // Clamp between 20% and 80%
+        percentage = Math.max(20, Math.min(80, percentage));
+        multiSearchSidebar.style.width = percentage + '%';
+    });
+    
+    document.addEventListener('mouseup', () => {
+        if (isResizing) {
+            isResizing = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+    });
+}
+
+// --- Toggle Multi-Search Sidebar ---
+if (toggleMultiSidebar) {
+    toggleMultiSidebar.addEventListener('click', () => {
+        multiSidebarVisible = !multiSidebarVisible;
+        const resultsWrapper = document.getElementById('results-wrapper');
+        
+        if (multiSidebarVisible) {
+            multiSearchSidebar.classList.add('active');
+            sidebarResizer.classList.add('active');
+            toggleMultiSidebar.classList.add('active');
+            resultsWrapper.classList.add('full-width');
+        } else {
+            multiSearchSidebar.classList.remove('active');
+            sidebarResizer.classList.remove('active');
+            toggleMultiSidebar.classList.remove('active');
+            resultsWrapper.classList.remove('full-width');
+        }
     });
 }
 

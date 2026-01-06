@@ -1,6 +1,6 @@
 const DB_NAME = "DocxSearchDB";
 const STORE_NAME = "documents";
-const DB_VERSION = 7; 
+const DB_VERSION = 8; 
 
 const params = new URLSearchParams(window.location.search);
 const docId = parseInt(params.get('id'));
@@ -25,33 +25,11 @@ const searchResultsPanel = document.getElementById('search-results-panel');
 const searchResultsList = document.getElementById('search-results-list');
 const closeSearchPanel = document.getElementById('close-search-panel');
 
-// Speech builder elements
-const speechBuilderBtn = document.getElementById('speech-builder-btn');
-const speechPanel = document.getElementById('speech-panel');
-const closeSpeechPanel = document.getElementById('close-speech-panel');
-const addCardBtn = document.getElementById('add-card-btn');
-const clearCardsBtn = document.getElementById('clear-cards-btn');
-const cardLabelInput = document.getElementById('card-label-input');
-const speechMessage = document.getElementById('speech-message');
-const speechCardList = document.getElementById('speech-card-list');
-const speechCardCount = document.getElementById('speech-card-count');
-const speechWordCount = document.getElementById('speech-word-count');
-const speechTime = document.getElementById('speech-time');
-const speechWpmInput = document.getElementById('speech-wpm');
-const speechPreviewFrame = document.getElementById('speech-preview-frame');
-const openPreviewTabBtn = document.getElementById('open-preview-tab');
-
 let internalSearchResults = [];
 let internalSearchIndex = 0;
 
-const SPEECH_CARDS_KEY = 'docbaseSpeechCards';
-const SPEECH_SETTINGS_KEY = 'docbaseSpeechSettings';
-const hasChromeStorage = () => typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
-const hasChromeTabs = () => typeof chrome !== 'undefined' && chrome.tabs;
-
 initResizer();
 initSearch();
-initSpeechBuilder();
 
 if (!docId) {
     statusEl.textContent = "Error: No document ID provided.";
@@ -110,6 +88,10 @@ async function renderDoc(doc) {
         const buffer = await doc.blob.arrayBuffer();
         container.innerHTML = ""; 
         await docx.renderAsync(buffer, container, null, { inWrapper: false, ignoreWidth: false, experimental: true });
+        
+        // Collapse blank pages (pages with only headers/minimal content)
+        collapseBlankPages(container);
+        
         generateOutline(container);
 
         if (targetHeader) {
@@ -122,6 +104,46 @@ async function renderDoc(doc) {
     } catch (e) {
         container.innerHTML = `<div style="color:red; padding:20px;">Error: ${e.message}</div>`;
     }
+}
+
+// Collapse pages that are mostly blank (only contain headers with minimal body text)
+function collapseBlankPages(container) {
+    const pages = container.querySelectorAll('section.docx');
+    
+    pages.forEach(page => {
+        // Get all text content
+        const allText = page.textContent.trim();
+        
+        // Get only body text (exclude headers)
+        const headers = page.querySelectorAll('h1, h2, h3, h4, h5, h6');
+        let headerText = '';
+        headers.forEach(h => headerText += h.textContent.trim() + ' ');
+        
+        // Calculate body text by removing header text
+        const bodyText = allText.replace(headerText.trim(), '').trim();
+        
+        // Check for paragraphs with actual content (not just whitespace)
+        const paragraphs = page.querySelectorAll('p');
+        let hasSubstantialContent = false;
+        paragraphs.forEach(p => {
+            const pText = p.textContent.trim();
+            // Consider it substantial if paragraph has more than 50 chars of non-header text
+            if (pText.length > 50) {
+                // Check if this paragraph text is not part of a heading-style element
+                const style = window.getComputedStyle(p);
+                const isBold = style.fontWeight === '700' || style.fontWeight === 'bold';
+                const isLargeFont = parseFloat(style.fontSize) > 16;
+                if (!(isBold && isLargeFont)) {
+                    hasSubstantialContent = true;
+                }
+            }
+        });
+        
+        // If page has headers but very little body content, mark as blank
+        if (headers.length > 0 && !hasSubstantialContent && bodyText.length < 100) {
+            page.classList.add('blank-page');
+        }
+    });
 }
 
 // --- HELPER: SMART REGEX GENERATOR ---

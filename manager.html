@@ -12,7 +12,7 @@
         body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #fff; margin: 0; padding: 0; color: #202124; display: flex; flex-direction: column; min-height: 100vh; }
         
         /* Top Nav */
-        .top-nav { display: flex; justify-content: flex-end; padding: 15px 20px; }
+        .top-nav { display: flex; justify-content: space-between; padding: 15px 20px; }
         .nav-btn { background: #1a73e8; color: white; border: none; padding: 10px 20px; border-radius: 4px; font-weight: 500; cursor: pointer; font-size: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
         .nav-btn:hover { background: #1557b0; }
 
@@ -35,9 +35,60 @@
         .filter-chip:hover { background: #f1f3f4; }
         .filter-chip.active { background: #e8f0fe; color: #1a73e8; border-color: #1a73e8; font-weight: 600; }
 
+        /* Results Layout with Sidebar */
+        #results-wrapper { display: none; max-width: 1200px; margin: 0 auto; width: 100%; padding: 0 20px; box-sizing: border-box; position: relative; }
+        body.has-results #results-wrapper { display: flex; }
+        body.has-results #results-wrapper.full-width { max-width: none; }
+        
+        /* Multi-Search Sidebar */
+        #multi-search-sidebar {
+            width: 50%;
+            min-width: 20%;
+            max-width: 80%;
+            background: #fff;
+            border-right: 1px solid #dadce0;
+            overflow-y: auto;
+            padding: 0;
+            flex-shrink: 0;
+            display: none;
+        }
+        #multi-search-sidebar.active { display: flex; flex-direction: column; }
+        .sidebar-section-header { padding: 12px 16px; font-weight: 600; font-size: 12px; text-transform: uppercase; color: #5f6368; background: #f8f9fa; border-bottom: 1px solid #e0e0e0; position: sticky; top: 0; z-index: 5; flex-shrink: 0; }
+        #multi-search-list { flex: 1; overflow-y: auto; padding: 20px; }
+        
+        /* Sidebar Resizer */
+        #sidebar-resizer {
+            width: 6px;
+            background: transparent;
+            cursor: col-resize;
+            flex-shrink: 0;
+            transition: background 0.15s;
+            display: none;
+        }
+        #sidebar-resizer.active { display: block; }
+        #sidebar-resizer:hover { background: rgba(0,0,0,0.1); }
+        
+        /* Toggle Sidebar Button */
+        .toggle-sidebar-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            background: #fef7e0;
+            border: 1px solid #f9d975;
+            border-radius: 20px;
+            color: #b45309;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .toggle-sidebar-btn:hover { background: #fde68a; }
+        .toggle-sidebar-btn.active { background: #b45309; color: white; border-color: #b45309; }
+        .toggle-sidebar-btn.active:hover { background: #92400e; }
+        
         /* Results Area */
-        #results-area { max-width: 800px; margin: 0 auto; width: 100%; padding: 20px; display: none; }
-        body.has-results #results-area { display: block; }
+        #results-area { flex: 1; padding: 20px; display: block; overflow-y: auto; }
         .no-results { text-align: center; color: #5f6368; margin-top: 40px; font-size: 16px; }
         .result-item { margin-bottom: 30px; }
         .result-url { color: #5f6368; font-size: 14px; margin-bottom: 4px; }
@@ -122,6 +173,10 @@
 </head>
 <body>
     <div class="top-nav">
+        <button id="toggle-multi-sidebar" class="toggle-sidebar-btn" title="Toggle Multi-Search Sidebar">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M3 18h13v-2H3v2zm0-5h10v-2H3v2zm0-7v2h13V6H3zm18 9.59L17.42 12 21 8.41 19.59 7l-5 5 5 5L21 15.59z"/></svg>
+            <span>Multi-Search</span>
+        </button>
         <button id="open-manager-btn" class="nav-btn">Manage Databases</button>
     </div>
 
@@ -133,7 +188,14 @@
         </div>
     </div>
 
-    <div id="results-area"></div>
+    <div id="results-wrapper">
+        <div id="multi-search-sidebar">
+            <div class="sidebar-section-header">Multi-Search Results</div>
+            <div id="multi-search-list"></div>
+        </div>
+        <div id="sidebar-resizer"></div>
+        <div id="results-area"></div>
+    </div>
 
     <div id="toast-container">Action Successful</div>
 
