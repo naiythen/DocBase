@@ -2,7 +2,7 @@
 
 **DocBase** (packaged as **Docx Local Search Engine** in the browser) is a Chrome/Edge extension for Policy, LD, and PF debaters. It creates a private, offline search engine for your local `.docx` backfiles.
 
-Stop relying on slow Drive searches or spotty tournament Wi-Fi. Download entire camp files from [Open Evidence](https://opencaselist.com/openev), index them in your browser, and find the perfect card in milliseconds.
+Stop relying on slow Drive searches or spotty tournament Wi-Fi. Download files from [OpenCaseList](https://opencaselist.com/), index them in your browser, and find the perfect card in milliseconds.
 
 ![DocBase extension screenshot](Screenshot%202025-12-05%20173557.png)
 
